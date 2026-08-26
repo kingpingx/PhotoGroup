@@ -112,6 +112,89 @@ public abstract class PhotoRepositoryContract
     }
 
     [Fact]
+    public async Task Detection_progress_is_tracked_for_each_detector_separately()
+    {
+        // The defect this guards against was user-visible and silent: detection progress was kept
+        // as a single state on the photo, so examining a library with one detector marked it
+        // finished for every detector. Choosing the other one and asking for detection reported
+        // "0 of 0" and did nothing, with no indication why.
+        var (reader, writer) = await CreateAsync();
+        var photo = NewPhoto(@"D:\photos\a.jpg", state: PhotoState.Detected);
+        await writer.UpsertAsync(photo, default);
+
+        await writer.RecordDetectionAsync(photo.Id, "detector.a", "1", faceCount: 2, default);
+
+        (await reader.CountPhotosNeedingDetectionAsync("detector.a", default)).Should().Be(0);
+        (await reader.CountPhotosNeedingDetectionAsync("detector.b", default)).Should().Be(1,
+            "a second detector has not examined this photograph and must be given the chance");
+    }
+
+    [Fact]
+    public async Task A_photograph_containing_nobody_is_not_examined_again()
+    {
+        // "Examined and found nobody" and "not yet examined" look identical in the faces table.
+        // Without recording the former, every photograph without people would be re-examined on
+        // every run, forever.
+        var (reader, writer) = await CreateAsync();
+        var photo = NewPhoto(@"D:\photos\landscape.jpg", state: PhotoState.Detected);
+        await writer.UpsertAsync(photo, default);
+
+        await writer.RecordDetectionAsync(photo.Id, "detector.a", "1", faceCount: 0, default);
+
+        (await reader.CountPhotosNeedingDetectionAsync("detector.a", default)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task A_changed_photograph_is_examined_again()
+    {
+        // Its stored faces describe pixels that no longer exist. The scan resets a changed file to
+        // New, and that must bring it back into the queue even though a record already exists.
+        var (reader, writer) = await CreateAsync();
+        var photo = NewPhoto(@"D:\photos\a.jpg", state: PhotoState.Detected);
+        await writer.UpsertAsync(photo, default);
+        await writer.RecordDetectionAsync(photo.Id, "detector.a", "1", faceCount: 2, default);
+
+        await writer.SetStateAsync(photo.Id, PhotoState.New, null, default);
+
+        (await reader.CountPhotosNeedingDetectionAsync("detector.a", default)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task An_unreadable_file_is_not_retried()
+    {
+        // It failed to decode before and will fail again; retrying makes every run pay for it.
+        var (reader, writer) = await CreateAsync();
+        var photo = NewPhoto(@"D:\photos\broken.jpg");
+        await writer.UpsertAsync(photo, default);
+        await writer.SetStateAsync(photo.Id, PhotoState.Failed, "Not a valid JPEG.", default);
+
+        (await reader.CountPhotosNeedingDetectionAsync("detector.a", default)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Re_examining_a_photograph_updates_its_record_rather_than_duplicating_it()
+    {
+        var (reader, writer) = await CreateAsync();
+        var photo = NewPhoto(@"D:\photos\a.jpg", state: PhotoState.Detected);
+        await writer.UpsertAsync(photo, default);
+
+        await writer.RecordDetectionAsync(photo.Id, "detector.a", "1", 2, default);
+        await writer.RecordDetectionAsync(photo.Id, "detector.a", "2", 5, default);
+
+        (await reader.CountPhotosNeedingDetectionAsync("detector.a", default)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task The_detection_queue_respects_its_limit()
+    {
+        var (reader, writer) = await CreateAsync();
+        await writer.BulkUpsertAsync(
+            [.. Enumerable.Range(0, 20).Select(i => NewPhoto($@"D:\photos\{i:D3}.jpg"))], default);
+
+        (await reader.GetPhotosNeedingDetectionAsync("detector.a", 6, default)).Should().HaveCount(6);
+    }
+
+    [Fact]
     public async Task A_state_query_respects_its_limit()
     {
         var (reader, writer) = await CreateAsync();

@@ -58,6 +58,83 @@ public sealed class SqlitePhotoRepository(SqliteConnectionFactory connections) :
         return results;
     }
 
+    /// <remarks>
+    /// A photograph qualifies when this detector has no record for it, or when the file has
+    /// changed since it was examined and has been reset to <see cref="PhotoState.New"/>. Files
+    /// marked <see cref="PhotoState.Failed"/> are excluded: they could not be decoded before and
+    /// will not decode now, and retrying them would make every run pay for them again.
+    /// </remarks>
+    private const string NeedsDetectionPredicate = """
+        p.state <> $failed
+        AND (p.state = $new OR d.photo_id IS NULL)
+        """;
+
+    public async Task<IReadOnlyList<Photo>> GetPhotosNeedingDetectionAsync(
+        string detectorId, int limit, CancellationToken ct)
+    {
+        await using var connection = connections.Open();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT {SelectColumns}
+            FROM photos p
+            LEFT JOIN photo_detections d ON d.photo_id = p.id AND d.detector_id = $detector
+            WHERE {NeedsDetectionPredicate}
+            ORDER BY p.id
+            LIMIT $limit;
+            """;
+        command.Parameters.AddWithValue("$detector", detectorId);
+        command.Parameters.AddWithValue("$failed", (int)PhotoState.Failed);
+        command.Parameters.AddWithValue("$new", (int)PhotoState.New);
+        command.Parameters.AddWithValue("$limit", limit);
+
+        var results = new List<Photo>();
+        await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            results.Add(Map(reader));
+        }
+
+        return results;
+    }
+
+    public async Task<int> CountPhotosNeedingDetectionAsync(string detectorId, CancellationToken ct)
+    {
+        await using var connection = connections.Open();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT COUNT(*)
+            FROM photos p
+            LEFT JOIN photo_detections d ON d.photo_id = p.id AND d.detector_id = $detector
+            WHERE {NeedsDetectionPredicate};
+            """;
+        command.Parameters.AddWithValue("$detector", detectorId);
+        command.Parameters.AddWithValue("$failed", (int)PhotoState.Failed);
+        command.Parameters.AddWithValue("$new", (int)PhotoState.New);
+
+        return Convert.ToInt32(await command.ExecuteScalarAsync(ct).ConfigureAwait(false));
+    }
+
+    public async Task RecordDetectionAsync(
+        PhotoId id, string detectorId, string detectorVersion, int faceCount, CancellationToken ct)
+    {
+        await using var connection = connections.Open();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO photo_detections (photo_id, detector_id, detector_version, face_count, detected_utc)
+            VALUES ($photo, $detector, $version, $count, $when)
+            ON CONFLICT (photo_id, detector_id) DO UPDATE SET
+                detector_version = excluded.detector_version,
+                face_count       = excluded.face_count,
+                detected_utc     = excluded.detected_utc;
+            """;
+        command.Parameters.AddWithValue("$photo", SqliteMappings.ToDb(id.Value));
+        command.Parameters.AddWithValue("$detector", detectorId);
+        command.Parameters.AddWithValue("$version", detectorVersion);
+        command.Parameters.AddWithValue("$count", faceCount);
+        command.Parameters.AddWithValue("$when", SqliteMappings.ToDb(DateTimeOffset.UtcNow));
+        await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
     public async Task<int> CountAsync(CancellationToken ct)
     {
         await using var connection = connections.Open();

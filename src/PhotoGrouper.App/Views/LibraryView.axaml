@@ -8,122 +8,208 @@
              x:DataType="vm:LibraryViewModel">
 
     <Grid>
-        <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="16">
+        <Grid RowDefinitions="Auto,*,Auto" Margin="28,22">
 
-            <!-- Toolbar -->
-            <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="0,0,0,12">
-                <Button Content="Add folder…" Click="OnAddFolderClick" />
-                <Button Content="Scan" Command="{Binding ScanCommand}" />
-                <Button Content="Detect faces" Command="{Binding DetectCommand}" />
+            <!-- The two actions of this stage, presented in the order they happen and separated by
+                 an arrow. Ordinary toolbar buttons sitting side by side give no hint that scanning
+                 must come before detecting, which is the single most common thing to get wrong on
+                 a first run. -->
+            <Border Grid.Row="0" Classes="card" Padding="20,16" Margin="0,0,0,18">
+                <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto">
 
-                <ComboBox ItemsSource="{Binding Detectors}"
-                          SelectedItem="{Binding SelectedDetector}"
-                          MinWidth="150" VerticalAlignment="Center"
-                          ToolTip.Tip="{Binding SelectedDetector.Notes}">
-                    <ComboBox.ItemTemplate>
-                        <DataTemplate x:DataType="ports:ProviderInfo">
-                            <TextBlock Text="{Binding DisplayName}" />
-                        </DataTemplate>
-                    </ComboBox.ItemTemplate>
-                </ComboBox>
+                    <StackPanel Grid.Column="0" Spacing="6">
+                        <TextBlock Text="STEP ONE" Classes="label" />
+                        <Button Content="Add folder" Click="OnAddFolderClick" />
+                    </StackPanel>
 
-                <Button Content="Cancel" Command="{Binding CancelScanCommand}"
-                        IsVisible="{Binding IsScanning}" />
+                    <TextBlock Grid.Column="1" Text="→" Classes="muted" FontSize="18"
+                               VerticalAlignment="Bottom" Margin="16,0,16,8" />
 
-                <TextBlock VerticalAlignment="Center" Margin="12,0,0,0"
-                           Text="{Binding PhotoCount, StringFormat='{}{0:N0} photos'}"
-                           Opacity="0.7" />
-            </StackPanel>
+                    <StackPanel Grid.Column="2" Spacing="6">
+                        <TextBlock Text="STEP TWO" Classes="label" />
+                        <Button Content="Scan for photos" Command="{Binding ScanCommand}" />
+                    </StackPanel>
 
-            <!-- Scan roots -->
-            <ItemsControl Grid.Row="1" ItemsSource="{Binding ScanRoots}" Margin="0,0,0,12">
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <WrapPanel />
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="photos:ScanRoot">
-                        <Border Background="{DynamicResource SystemControlBackgroundListLowBrush}"
-                                CornerRadius="4" Padding="8,4" Margin="0,0,6,6">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <TextBlock Text="{Binding Path}" VerticalAlignment="Center" />
-                                <Button Content="✕" Padding="4,0" FontSize="11"
-                                        Background="Transparent" BorderThickness="0"
-                                        Command="{Binding $parent[ItemsControl].((vm:LibraryViewModel)DataContext).RemoveScanRootCommand}"
-                                        CommandParameter="{Binding}" />
-                            </StackPanel>
-                        </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
+                    <TextBlock Grid.Column="3" Text="→" Classes="muted" FontSize="18"
+                               VerticalAlignment="Bottom" Margin="16,0,16,8" />
 
-            <!-- Photo grid.
+                    <StackPanel Grid.Column="4" Spacing="6">
+                        <TextBlock Text="STEP THREE" Classes="label" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="Find faces" Classes="primary"
+                                    Command="{Binding DetectCommand}" />
+                            <ComboBox ItemsSource="{Binding Detectors}"
+                                      SelectedItem="{Binding SelectedDetector}"
+                                      MinWidth="145" VerticalAlignment="Center"
+                                      ToolTip.Tip="{Binding SelectedDetector.Notes}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="ports:ProviderInfo">
+                                        <TextBlock Text="{Binding DisplayName}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                        </StackPanel>
+                    </StackPanel>
 
-                 ItemsRepeater with a UniformGridLayout virtualises its containers, so only the
-                 tiles actually on screen exist as controls. A WrapPanel would realise all of
-                 them, which is fine for a hundred photos and fatal for fifty thousand. -->
-            <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
-                <ItemsRepeater ItemsSource="{Binding Photos}">
-                    <ItemsRepeater.Layout>
-                        <UniformGridLayout ItemsStretch="None"
-                                           MinItemWidth="180" MinItemHeight="180"
-                                           MinColumnSpacing="8" MinRowSpacing="8" />
-                    </ItemsRepeater.Layout>
-                    <ItemsRepeater.ItemTemplate>
-                        <DataTemplate x:DataType="vm:PhotoTileViewModel">
-                            <Border Width="180" Height="180" CornerRadius="4"
-                                    Background="{DynamicResource SystemControlBackgroundListLowBrush}"
-                                    ToolTip.Tip="{Binding Tooltip}"
-                                    Cursor="Hand"
-                                    PointerPressed="OnTilePressed"
-                                    AttachedToVisualTree="OnTileAttached"
-                                    DetachedFromVisualTree="OnTileDetached">
-                                <Grid RowDefinitions="*,Auto">
-                                    <Image Grid.Row="0" Source="{Binding Thumbnail}"
-                                           Stretch="UniformToFill" Margin="4" />
-                                    <TextBlock Grid.Row="1" Text="{Binding FileName}"
-                                               FontSize="11" Opacity="0.7"
-                                               TextTrimming="CharacterEllipsis"
-                                               Margin="6,0,6,6" />
-                                </Grid>
+                    <StackPanel Grid.Column="6" Orientation="Horizontal" Spacing="20"
+                                VerticalAlignment="Center">
+                        <StackPanel>
+                            <TextBlock Text="{Binding PhotoCount, StringFormat='{}{0:N0}'}"
+                                       FontSize="22" FontWeight="Bold" HorizontalAlignment="Right" />
+                            <TextBlock Text="PHOTOS" Classes="label" HorizontalAlignment="Right" />
+                        </StackPanel>
+                        <StackPanel>
+                            <TextBlock Text="{Binding FaceCount, StringFormat='{}{0:N0}'}"
+                                       FontSize="22" FontWeight="Bold" HorizontalAlignment="Right"
+                                       Foreground="{StaticResource Accent}" />
+                            <TextBlock Text="FACES" Classes="label" HorizontalAlignment="Right" />
+                        </StackPanel>
+                        <Button Content="Stop" Classes="danger" Command="{Binding CancelScanCommand}"
+                                IsVisible="{Binding IsScanning}" VerticalAlignment="Center" />
+                        <Button Content="Clear library" Classes="ghost" VerticalAlignment="Center"
+                                Click="OnClearLibraryClick"
+                                IsVisible="{Binding PhotoCount}"
+                                ToolTip.Tip="Opens Settings, which shows exactly what will be removed" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Grid Grid.Row="1" RowDefinitions="Auto,*">
+
+                <ItemsControl Grid.Row="0" ItemsSource="{Binding ScanRoots}" Margin="0,0,0,14">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="photos:ScanRoot">
+                            <Border Background="{StaticResource SurfaceRaised}"
+                                    BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1"
+                                    CornerRadius="20" Padding="14,6" Margin="0,0,8,8">
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <TextBlock Text="📁" FontSize="12" VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding Path}" VerticalAlignment="Center" FontSize="12" />
+                                    <Button Content="✕" Padding="6,0" FontSize="11" Classes="ghost"
+                                            Command="{Binding $parent[ItemsControl].((vm:LibraryViewModel)DataContext).RemoveScanRootCommand}"
+                                            CommandParameter="{Binding}" />
+                                </StackPanel>
                             </Border>
                         </DataTemplate>
-                    </ItemsRepeater.ItemTemplate>
-                </ItemsRepeater>
-            </ScrollViewer>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
 
-            <!-- Status bar -->
-            <StackPanel Grid.Row="3" Spacing="6" Margin="0,12,0,0">
-                <ProgressBar IsVisible="{Binding IsScanning}"
-                             IsIndeterminate="{Binding IsProgressIndeterminate}"
-                             Value="{Binding ProgressFraction}" Maximum="1" Height="4" />
-                <TextBlock Text="{Binding Status}" Opacity="0.75" FontSize="12"
-                           TextWrapping="Wrap" />
-            </StackPanel>
+                <!-- Shown only when there is genuinely nothing yet, so a first run says what to do
+                     rather than presenting an unexplained empty rectangle. -->
+                <Border Grid.Row="1" Classes="card" Padding="40"
+                        IsVisible="{Binding !PhotoCount}"
+                        VerticalAlignment="Center" HorizontalAlignment="Center">
+                    <StackPanel Spacing="10" HorizontalAlignment="Center">
+                        <TextBlock Text="◈" FontSize="34" HorizontalAlignment="Center"
+                                   Foreground="{StaticResource Accent}" />
+                        <TextBlock Text="No photos yet" Classes="heading" HorizontalAlignment="Center" />
+                        <TextBlock Classes="muted" HorizontalAlignment="Center" MaxWidth="330"
+                                   TextWrapping="Wrap" TextAlignment="Center"
+                                   Text="Add a folder, scan it, then find faces. Nothing is copied or moved; your files stay exactly where they are." />
+                    </StackPanel>
+                </Border>
+
+                <!-- ItemsRepeater with a UniformGridLayout virtualises its containers, so only the
+                     tiles actually on screen exist as controls. A WrapPanel would realise all of
+                     them, which is fine for a hundred photos and fatal for fifty thousand. -->
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                              IsVisible="{Binding PhotoCount}">
+                    <ItemsRepeater ItemsSource="{Binding Photos}"
+                                   ElementPrepared="OnTilePrepared"
+                                   ElementClearing="OnTileClearing">
+                        <ItemsRepeater.Layout>
+                            <UniformGridLayout ItemsStretch="None"
+                                               MinItemWidth="184" MinItemHeight="184"
+                                               MinColumnSpacing="12" MinRowSpacing="12" />
+                        </ItemsRepeater.Layout>
+                        <ItemsRepeater.ItemTemplate>
+                            <DataTemplate x:DataType="vm:PhotoTileViewModel">
+                                <Border Width="184" Height="184" Classes="tile"
+                                        ToolTip.Tip="{Binding Tooltip}"
+                                        Cursor="Hand" ClipToBounds="True"
+                                        PointerPressed="OnTilePressed">
+                                    <Grid RowDefinitions="*,Auto">
+                                        <Image Grid.Row="0" Source="{Binding Thumbnail}"
+                                               Stretch="UniformToFill" Margin="5,5,5,0" />
+                                        <Border Grid.Row="1" Padding="9,6">
+                                            <TextBlock Text="{Binding FileName}" Classes="muted"
+                                                       FontSize="10" TextTrimming="CharacterEllipsis" />
+                                        </Border>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsRepeater.ItemTemplate>
+                    </ItemsRepeater>
+                </ScrollViewer>
+            </Grid>
+
+            <Border Grid.Row="2" Classes="card" Padding="16,12" Margin="0,16,0,0">
+                <StackPanel Spacing="8">
+                    <ProgressBar IsVisible="{Binding IsScanning}"
+                                 IsIndeterminate="{Binding IsProgressIndeterminate}"
+                                 Value="{Binding ProgressFraction}" Maximum="1" />
+                    <TextBlock Text="{Binding Status}" Classes="muted" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
         </Grid>
 
         <!-- Face inspector. Overlaid rather than a separate screen: checking a detection is
-             something done in passing while looking at the grid, not a place to navigate to. -->
-        <Border IsVisible="{Binding Overlay.IsVisible}"
-                Background="#E6000000">
-            <Grid RowDefinitions="Auto,*,Auto" Margin="24">
-                <TextBlock Grid.Row="0" Text="{Binding Overlay.Caption}"
-                           Foreground="White" FontSize="14" Margin="0,0,0,12" />
+             something done in passing while looking at the grid, not a place to navigate to.
 
-                <Grid Grid.Row="1">
-                    <Image Name="OverlayImage" Source="{Binding Overlay.Image}" Stretch="Uniform" />
-                    <views:FaceOverlayControl Name="OverlayMarks" />
+             The dimmed area behind the photograph dismisses the viewer when clicked, which is what
+             everyone tries first. The photograph and the controls stop the click travelling that
+             far, so pressing Next never closes the thing being read. -->
+        <Border IsVisible="{Binding Overlay.IsVisible}" Background="#F2050810"
+                PointerPressed="OnOverlayBackgroundPressed">
+            <Grid RowDefinitions="Auto,*,Auto" Margin="32,22">
+
+                <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,14"
+                      PointerPressed="OnOverlayContentPressed">
+                    <Button Grid.Column="0" Content="← Back" Command="{Binding CloseOverlayCommand}" />
+
+                    <StackPanel Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Overlay.Caption}" FontSize="13"
+                                   HorizontalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Overlay.Position}" Classes="muted" FontSize="11"
+                                   HorizontalAlignment="Center" />
+                    </StackPanel>
+
+                    <TextBlock Grid.Column="2" Classes="muted" VerticalAlignment="Center"
+                               Text="Esc to close · ← → to move" />
                 </Grid>
 
-                <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="16"
-                            HorizontalAlignment="Center" Margin="0,12,0,0">
-                    <TextBlock Foreground="#FF6666" Text="● left eye" FontSize="11" />
-                    <TextBlock Foreground="#66CCFF" Text="● right eye" FontSize="11" />
-                    <TextBlock Foreground="#FFFF66" Text="● nose" FontSize="11" />
-                    <TextBlock Foreground="#FF66FF" Text="● mouth left" FontSize="11" />
-                    <TextBlock Foreground="#FFAA66" Text="● mouth right" FontSize="11" />
-                    <Button Content="Close" Command="{Binding CloseOverlayCommand}" />
+                <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto">
+                    <Button Grid.Column="0" Content="‹" FontSize="26" Padding="16,6"
+                            VerticalAlignment="Center" Margin="0,0,14,0"
+                            Command="{Binding ShowPreviousCommand}"
+                            PointerPressed="OnOverlayContentPressed"
+                            ToolTip.Tip="Previous photo" />
+
+                    <Grid Grid.Column="1" PointerPressed="OnOverlayContentPressed">
+                        <Image Name="OverlayImage" Source="{Binding Overlay.Image}" Stretch="Uniform" />
+                        <views:FaceOverlayControl Name="OverlayMarks" />
+                    </Grid>
+
+                    <Button Grid.Column="2" Content="›" FontSize="26" Padding="16,6"
+                            VerticalAlignment="Center" Margin="14,0,0,0"
+                            Command="{Binding ShowNextCommand}"
+                            PointerPressed="OnOverlayContentPressed"
+                            ToolTip.Tip="Next photo" />
+                </Grid>
+
+                <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="18"
+                            HorizontalAlignment="Center" Margin="0,16,0,0"
+                            PointerPressed="OnOverlayContentPressed">
+                    <TextBlock Foreground="#FF6666" Text="● left eye" FontSize="11" VerticalAlignment="Center" />
+                    <TextBlock Foreground="#66CCFF" Text="● right eye" FontSize="11" VerticalAlignment="Center" />
+                    <TextBlock Foreground="#FFFF66" Text="● nose" FontSize="11" VerticalAlignment="Center" />
+                    <TextBlock Foreground="#FF66FF" Text="● mouth left" FontSize="11" VerticalAlignment="Center" />
+                    <TextBlock Foreground="#FFAA66" Text="● mouth right" FontSize="11" VerticalAlignment="Center" />
                 </StackPanel>
             </Grid>
         </Border>

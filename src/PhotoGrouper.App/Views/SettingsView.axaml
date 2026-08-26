@@ -1,0 +1,76 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:PhotoGrouper.App.ViewModels"
+             x:Class="PhotoGrouper.App.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel">
+
+    <ScrollViewer>
+        <StackPanel Margin="28,22" Spacing="18" MaxWidth="720" HorizontalAlignment="Left">
+
+            <TextBlock Text="Settings" Classes="heading" />
+
+            <!-- Library -->
+            <Border Classes="card" Padding="22">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="LIBRARY" Classes="label" />
+                    <TextBlock Text="{Binding LibrarySummary}" FontSize="13" TextWrapping="Wrap" />
+
+                    <TextBlock TextWrapping="Wrap" Classes="muted"
+                               Text="Clearing removes every photo, face, group and name, along with the folder list and thumbnails. Your photographs on disk are not touched. Downloaded models are kept." />
+
+                    <StackPanel Orientation="Horizontal" Spacing="8"
+                                IsVisible="{Binding !IsConfirmingReset}">
+                        <Button Content="Clear library" Classes="danger" Command="{Binding BeginResetCommand}" />
+                    </StackPanel>
+
+                    <!-- Confirmation replaces the button rather than appearing as a dialog, so the
+                         wording of what is about to be destroyed sits next to the action. -->
+                    <Border IsVisible="{Binding IsConfirmingReset}"
+                            CornerRadius="8" Padding="14" Background="#33FF5C7A">
+                        <StackPanel Spacing="10">
+                            <TextBlock TextWrapping="Wrap" FontSize="12"
+                                       Text="This cannot be undone. Any names you have given to people will be lost and would have to be typed again." />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Content="Yes, clear everything" Classes="danger"
+                                        Command="{Binding ConfirmResetCommand}" />
+                                <Button Content="Cancel" Command="{Binding CancelResetCommand}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Border>
+
+            <!-- Models -->
+            <Border Classes="card" Padding="22">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="DOWNLOADED MODELS" Classes="label" />
+                    <TextBlock Text="{Binding ModelSummary}" FontSize="13" TextWrapping="Wrap" />
+
+                    <TextBlock TextWrapping="Wrap" Classes="muted"
+                               Text="Removing these frees disk space but means waiting for the download again the next time faces are detected or grouped. The recognition model alone is 174 MB." />
+
+                    <StackPanel Orientation="Horizontal" Spacing="8"
+                                IsVisible="{Binding !IsConfirmingModelDelete}">
+                        <Button Content="Remove downloaded models"
+                                Command="{Binding BeginModelDeleteCommand}" />
+                    </StackPanel>
+
+                    <Border IsVisible="{Binding IsConfirmingModelDelete}"
+                            CornerRadius="8" Padding="14" Background="#33FFB454">
+                        <StackPanel Spacing="10">
+                            <TextBlock TextWrapping="Wrap" FontSize="12"
+                                       Text="The models will be downloaded again when next needed." />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Content="Remove them"
+                                        Command="{Binding ConfirmModelDeleteCommand}" />
+                                <Button Content="Cancel" Command="{Binding CancelModelDeleteCommand}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Border>
+
+            <TextBlock Text="{Binding Status}" Foreground="{StaticResource Accent}" FontSize="12" TextWrapping="Wrap" />
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

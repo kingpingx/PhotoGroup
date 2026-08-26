@@ -24,6 +24,22 @@ public interface IPhotoReader
 
     Task<IReadOnlyList<Photo>> GetByStateAsync(PhotoState state, int limit, CancellationToken ct);
 
+    /// <summary>
+    /// Photographs the given detector has not examined yet.
+    /// </summary>
+    /// <remarks>
+    /// Detection progress is per-detector, not per-photo. Asking instead for photographs in a
+    /// "not yet detected" state would mean that examining a library with one detector marked it
+    /// finished for every detector, and switching to the other would silently find no work.
+    ///
+    /// A photograph whose file has changed since it was examined is included again, because its
+    /// stored faces describe pixels that no longer exist.
+    /// </remarks>
+    Task<IReadOnlyList<Photo>> GetPhotosNeedingDetectionAsync(string detectorId, int limit, CancellationToken ct);
+
+    /// <summary>How many photographs still await examination by this detector.</summary>
+    Task<int> CountPhotosNeedingDetectionAsync(string detectorId, CancellationToken ct);
+
     Task<int> CountAsync(CancellationToken ct);
 
     /// <summary>Streams every photo in id order, without materialising the whole library.</summary>

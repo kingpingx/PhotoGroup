@@ -34,6 +34,29 @@ public sealed class InMemoryPhotoRepository : IPhotoReader, IPhotoWriter
 
     public Task<int> CountAsync(CancellationToken ct) => Task.FromResult(_byPath.Count);
 
+    /// <summary>Detection records, keyed by photo and detector, mirroring the real store.</summary>
+    private readonly HashSet<(PhotoId Photo, string Detector)> _detections = [];
+
+    public Task<IReadOnlyList<Photo>> GetPhotosNeedingDetectionAsync(
+        string detectorId, int limit, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<Photo>>([.. NeedingDetection(detectorId).Take(limit)]);
+
+    public Task<int> CountPhotosNeedingDetectionAsync(string detectorId, CancellationToken ct) =>
+        Task.FromResult(NeedingDetection(detectorId).Count());
+
+    private IEnumerable<Photo> NeedingDetection(string detectorId) =>
+        _byPath.Values
+            .Where(p => p.State != PhotoState.Failed)
+            .Where(p => p.State == PhotoState.New || !_detections.Contains((p.Id, detectorId)))
+            .OrderBy(p => p.Path, StringComparer.OrdinalIgnoreCase);
+
+    public Task RecordDetectionAsync(
+        PhotoId id, string detectorId, string detectorVersion, int faceCount, CancellationToken ct)
+    {
+        _detections.Add((id, detectorId));
+        return Task.CompletedTask;
+    }
+
     public async IAsyncEnumerable<Photo> StreamAllAsync([EnumeratorCancellation] CancellationToken ct)
     {
         foreach (var photo in _byPath.Values.OrderBy(p => p.Path, StringComparer.OrdinalIgnoreCase))

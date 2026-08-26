@@ -57,6 +57,48 @@ public sealed class SqliteFaceRepository(SqliteConnectionFactory connections) : 
         return await ReadAllAsync(command, ct).ConfigureAwait(false);
     }
 
+    /// <remarks>
+    /// Parameters are generated for the id list rather than the values being concatenated into the
+    /// statement. Chunked because SQLite caps how many a single statement may carry, and a batch
+    /// larger than that would fail only once a library grew big enough to produce one.
+    /// </remarks>
+    public async Task<IReadOnlyList<Face>> GetByIdsAsync(IReadOnlyList<FaceId> ids, CancellationToken ct)
+    {
+        if (ids.Count == 0)
+        {
+            return [];
+        }
+
+        const int chunkSize = 400;
+        var results = new List<Face>(ids.Count);
+
+        await using var connection = connections.Open();
+
+        for (var offset = 0; offset < ids.Count; offset += chunkSize)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var chunk = ids.Skip(offset).Take(chunkSize).ToList();
+            var placeholders = string.Join(",", chunk.Select((_, i) => $"$id{i}"));
+
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT {SelectColumns} FROM faces WHERE id IN ({placeholders});";
+
+            for (var i = 0; i < chunk.Count; i++)
+            {
+                command.Parameters.AddWithValue($"$id{i}", SqliteMappings.ToDb(chunk[i].Value));
+            }
+
+            await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            while (await reader.ReadAsync(ct).ConfigureAwait(false))
+            {
+                results.Add(Map(reader));
+            }
+        }
+
+        return results;
+    }
+
     public async Task<IReadOnlyList<Face>> GetByPersonAsync(PersonId personId, string detectorId, CancellationToken ct)
     {
         await using var connection = connections.Open();
@@ -123,6 +165,43 @@ public sealed class SqliteFaceRepository(SqliteConnectionFactory connections) : 
         }
 
         await transaction.CommitAsync(ct).ConfigureAwait(false);
+    }
+
+    public async Task SetClustersAsync(IReadOnlyList<FaceClusterAssignment> assignments, CancellationToken ct)
+    {
+        if (assignments.Count == 0)
+        {
+            return;
+        }
+
+        await using var connection = connections.Open();
+        await using var transaction = await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.Transaction = (SqliteTransaction)transaction;
+        command.CommandText = "UPDATE faces SET cluster_id = $cluster WHERE id = $id;";
+
+        var cluster = command.Parameters.Add(new SqliteParameter("$cluster", DBNull.Value));
+        var id = command.Parameters.Add(new SqliteParameter("$id", DBNull.Value));
+
+        foreach (var assignment in assignments)
+        {
+            ct.ThrowIfCancellationRequested();
+            cluster.Value = assignment.ClusterId is { } c ? SqliteMappings.ToDb(c.Value) : DBNull.Value;
+            id.Value = SqliteMappings.ToDb(assignment.FaceId.Value);
+            await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+
+        await transaction.CommitAsync(ct).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<Face>> GetByClusterAsync(ClusterId clusterId, CancellationToken ct)
+    {
+        await using var connection = connections.Open();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT {SelectColumns} FROM faces WHERE cluster_id = $cluster ORDER BY id;";
+        command.Parameters.AddWithValue("$cluster", SqliteMappings.ToDb(clusterId.Value));
+
+        return await ReadAllAsync(command, ct).ConfigureAwait(false);
     }
 
     /// <remarks>

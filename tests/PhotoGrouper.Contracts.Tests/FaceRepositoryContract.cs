@@ -288,6 +288,59 @@ public abstract class FaceRepositoryContract
     }
 
     [Fact]
+    public async Task Faces_can_be_fetched_by_a_list_of_ids()
+    {
+        // How each stage collects the batch it is about to work on. Scanning and filtering instead
+        // would make a linear pass over the library quadratic.
+        var (faces, photos, _) = await CreateAsync();
+        var photo = await AddPhotoAsync(photos);
+        var all = Enumerable.Range(0, 10).Select(_ => NewFace(photo)).ToList();
+        await faces.BulkInsertAsync(all, default);
+
+        var wanted = all.Take(3).Select(f => f.Id).ToList();
+
+        var fetched = await faces.GetByIdsAsync(wanted, default);
+
+        fetched.Select(f => f.Id).Should().BeEquivalentTo(wanted);
+    }
+
+    [Fact]
+    public async Task Fetching_no_ids_returns_nothing()
+    {
+        var (faces, _, _) = await CreateAsync();
+
+        (await faces.GetByIdsAsync([], default)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Fetching_by_id_copes_with_more_ids_than_one_statement_can_carry()
+    {
+        // SQLite caps how many parameters a statement may hold. Without chunking this would work
+        // in development and fail only once somebody's library grew past the limit.
+        var (faces, photos, _) = await CreateAsync();
+        var photo = await AddPhotoAsync(photos);
+        var all = Enumerable.Range(0, 1500).Select(_ => NewFace(photo)).ToList();
+        await faces.BulkInsertAsync(all, default);
+
+        var fetched = await faces.GetByIdsAsync([.. all.Select(f => f.Id)], default);
+
+        fetched.Should().HaveCount(1500);
+    }
+
+    [Fact]
+    public async Task Unknown_ids_are_simply_absent_from_the_result()
+    {
+        var (faces, photos, _) = await CreateAsync();
+        var photo = await AddPhotoAsync(photos);
+        var face = NewFace(photo);
+        await faces.BulkInsertAsync([face], default);
+
+        var fetched = await faces.GetByIdsAsync([face.Id, FaceId.New()], default);
+
+        fetched.Should().ContainSingle();
+    }
+
+    [Fact]
     public async Task Bulk_insert_stores_every_face()
     {
         var (faces, photos, people) = await CreateAsync();

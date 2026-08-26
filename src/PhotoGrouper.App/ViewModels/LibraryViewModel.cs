@@ -23,6 +23,7 @@ public sealed partial class LibraryViewModel : ObservableObject
     private readonly DetectFacesUseCase _detectFaces;
     private readonly DetectorRegistry _detectors;
     private readonly IPhotoReader _photos;
+    private readonly IFaceRepository _faces;
     private readonly ThumbnailLoader _thumbnails;
 
     private CancellationTokenSource? _scanCancellation;
@@ -33,16 +34,21 @@ public sealed partial class LibraryViewModel : ObservableObject
         DetectFacesUseCase detectFaces,
         DetectorRegistry detectors,
         IPhotoReader photos,
+        IFaceRepository faces,
         ThumbnailLoader thumbnails,
-        FaceOverlayViewModel overlay)
+        FaceOverlayViewModel overlay,
+        LibraryChangedNotifier libraryChanged)
     {
         _scanLibrary = scanLibrary;
         _manageScanRoots = manageScanRoots;
         _detectFaces = detectFaces;
         _detectors = detectors;
         _photos = photos;
+        _faces = faces;
         _thumbnails = thumbnails;
         Overlay = overlay;
+
+        libraryChanged.Subscribe(() => InitializeAsync(CancellationToken.None));
     }
 
     public FaceOverlayViewModel Overlay { get; }
@@ -72,6 +78,10 @@ public sealed partial class LibraryViewModel : ObservableObject
 
     [ObservableProperty]
     private int _photoCount;
+
+    /// <summary>Faces found by the active detector, shown in the workflow header.</summary>
+    [ObservableProperty]
+    private int _faceCount;
 
     public async Task InitializeAsync(CancellationToken ct)
     {
@@ -200,11 +210,8 @@ public sealed partial class LibraryViewModel : ObservableObject
                 () => _detectFaces.ExecuteAsync(detector, FaceQuality.Default, progress, cancellation.Token),
                 cancellation.Token).ConfigureAwait(true);
 
-            Status =
-                $"Detection complete. {result.FacesFound:N0} face(s) in {result.PhotosProcessed:N0} photo(s)"
-                + (result.FacesRejected > 0 ? $", {result.FacesRejected:N0} rejected as too small or faint" : string.Empty)
-                + (result.PhotosFailed > 0 ? $", {result.PhotosFailed:N0} unreadable" : string.Empty)
-                + ".";
+            Status = await DescribeDetectionAsync(result, detector.Info.DisplayName).ConfigureAwait(true);
+            await RefreshPhotosAsync(CancellationToken.None).ConfigureAwait(true);
 
             await RefreshPhotosAsync(CancellationToken.None).ConfigureAwait(true);
         }
@@ -229,19 +236,109 @@ public sealed partial class LibraryViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Describes a detection run in terms of the whole library, not just the work just done.
+    /// </summary>
+    /// <remarks>
+    /// Reporting only the run was actively misleading. Detection is incremental, so a second run
+    /// over an unchanged folder examines only what it has not seen, and a library of twenty-one
+    /// photographs would report "0 faces in 3 photos" — which reads as a failure rather than as
+    /// nothing left to do. Stating the library total alongside answers the question the user is
+    /// actually asking, which is whether it worked.
+    /// </remarks>
+    private async Task<string> DescribeDetectionAsync(DetectionResult result, string detectorName)
+    {
+        var totalPhotos = await _photos.CountAsync(CancellationToken.None).ConfigureAwait(true);
+        var totalFaces = await _faces
+            .CountAsync(SelectedDetector.Id, activeOnly: true, CancellationToken.None)
+            .ConfigureAwait(true);
+
+        var run = result.PhotosProcessed == 0
+            ? $"Every photo has already been examined by {detectorName}."
+            : $"Examined {result.PhotosProcessed:N0} photo(s), finding {result.FacesFound:N0} face(s).";
+
+        var notes = new List<string>();
+        if (result.FacesRejected > 0)
+        {
+            notes.Add($"{result.FacesRejected:N0} detection(s) discarded as too small or blurred");
+        }
+
+        if (result.PhotosFailed > 0)
+        {
+            notes.Add($"{result.PhotosFailed:N0} file(s) could not be read");
+        }
+
+        var detail = notes.Count > 0 ? $" ({string.Join("; ", notes)})" : string.Empty;
+
+        return $"{run}{detail} Library: {totalFaces:N0} face(s) across {totalPhotos:N0} photo(s) using {detectorName}.";
+    }
+
+    /// <summary>Position of the photograph being inspected, so the viewer can step through them.</summary>
+    private int _inspectedIndex = -1;
+
     /// <summary>Opens the marked-up view of a photo, for checking detection by eye.</summary>
     [RelayCommand]
     private async Task InspectAsync(PhotoTileViewModel? tile)
     {
-        if (tile is not null)
+        if (tile is null)
         {
-            await Overlay.ShowAsync(tile.Photo, SelectedDetector.Id, CancellationToken.None)
-                .ConfigureAwait(true);
+            return;
         }
+
+        _inspectedIndex = Photos.IndexOf(tile);
+        await ShowInspectedAsync().ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Moves to the next or previous photograph without leaving the viewer.
+    /// </summary>
+    /// <remarks>
+    /// Checking whether detection is working means looking at several photographs in a row, and
+    /// closing the viewer and finding the next tile between each one makes that tedious enough
+    /// that it stops being done. The step is bounded rather than wrapping: reaching the end of the
+    /// library and silently continuing from the beginning gives no sense of having finished.
+    /// </remarks>
+    [RelayCommand(CanExecute = nameof(CanShowNext))]
+    private async Task ShowNextAsync()
+    {
+        _inspectedIndex++;
+        await ShowInspectedAsync().ConfigureAwait(true);
+    }
+
+    private bool CanShowNext() => _inspectedIndex >= 0 && _inspectedIndex < Photos.Count - 1;
+
+    [RelayCommand(CanExecute = nameof(CanShowPrevious))]
+    private async Task ShowPreviousAsync()
+    {
+        _inspectedIndex--;
+        await ShowInspectedAsync().ConfigureAwait(true);
+    }
+
+    private bool CanShowPrevious() => _inspectedIndex > 0;
+
+    private async Task ShowInspectedAsync()
+    {
+        if (_inspectedIndex < 0 || _inspectedIndex >= Photos.Count)
+        {
+            Overlay.Hide();
+            return;
+        }
+
+        await Overlay
+            .ShowAsync(Photos[_inspectedIndex].Photo, SelectedDetector.Id, CancellationToken.None)
+            .ConfigureAwait(true);
+
+        Overlay.Position = $"{_inspectedIndex + 1:N0} of {Photos.Count:N0}";
+        ShowNextCommand.NotifyCanExecuteChanged();
+        ShowPreviousCommand.NotifyCanExecuteChanged();
     }
 
     [RelayCommand]
-    private void CloseOverlay() => Overlay.Hide();
+    private void CloseOverlay()
+    {
+        Overlay.Hide();
+        _inspectedIndex = -1;
+    }
 
     [RelayCommand(CanExecute = nameof(IsScanning))]
     private void CancelScan() => _scanCancellation?.Cancel();
@@ -288,6 +385,9 @@ public sealed partial class LibraryViewModel : ObservableObject
         }
 
         PhotoCount = Photos.Count;
+        FaceCount = await _faces
+            .CountAsync(SelectedDetector.Id, activeOnly: true, CancellationToken.None)
+            .ConfigureAwait(true);
 
         if (PhotoCount == 0 && ScanRoots.Count > 0)
         {

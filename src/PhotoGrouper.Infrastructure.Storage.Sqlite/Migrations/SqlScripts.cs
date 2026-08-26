@@ -161,4 +161,39 @@ internal static class SqlScripts
             value TEXT NOT NULL
         );
         """;
+
+    /// <summary>
+    /// Records which detector has already examined which photograph.
+    /// </summary>
+    /// <remarks>
+    /// Added because detection progress was being tracked on the photo itself, as a single state
+    /// column, while detection is inherently per-detector. Once a photograph had been examined by
+    /// one detector it was marked done for all of them, so choosing the other detector and asking
+    /// for detection silently found nothing to do.
+    ///
+    /// A count is stored rather than inferring completion from the presence of faces, because
+    /// "examined and found nobody" and "not yet examined" are different states that look identical
+    /// in the faces table. Without the distinction, every photograph containing no people would be
+    /// re-examined on every run, forever.
+    /// </remarks>
+    public const string V2PhotoDetections = """
+        CREATE TABLE photo_detections (
+            photo_id         BLOB    NOT NULL REFERENCES photos (id) ON DELETE CASCADE,
+            detector_id      TEXT    NOT NULL,
+            detector_version TEXT    NOT NULL,
+            face_count       INTEGER NOT NULL,
+            detected_utc     TEXT    NOT NULL,
+            PRIMARY KEY (photo_id, detector_id)
+        );
+
+        CREATE INDEX ix_photo_detections_detector ON photo_detections (detector_id);
+
+        -- Reconstructed for photographs that already have faces, so that upgrading does not
+        -- discard detection work that has already been paid for. Photographs examined and found
+        -- to contain nobody cannot be recovered this way and will be examined once more.
+        INSERT INTO photo_detections (photo_id, detector_id, detector_version, face_count, detected_utc)
+        SELECT photo_id, detector_id, MIN(detector_version), COUNT(*), '1970-01-01T00:00:00.0000000+00:00'
+        FROM faces
+        GROUP BY photo_id, detector_id;
+        """;
 }

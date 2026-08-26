@@ -50,17 +50,25 @@ public sealed class DetectFacesUseCase(
         var detectorVersion = detector.Info.Version;
 
         var processed = 0;
+        int? total = null;
         var facesFound = 0;
         var rejected = 0;
         var failed = 0;
 
         while (!ct.IsCancellationRequested)
         {
-            var batch = await photos.GetByStateAsync(PhotoState.New, PhotosPerBatch, ct).ConfigureAwait(false);
+            var batch = await photos
+                .GetPhotosNeedingDetectionAsync(detectorId, PhotosPerBatch, ct)
+                .ConfigureAwait(false);
+
             if (batch.Count == 0)
             {
                 break;
             }
+
+            total ??= processed + await photos
+                .CountPhotosNeedingDetectionAsync(detectorId, ct)
+                .ConfigureAwait(false);
 
             // Bounded so that decode cannot run ahead of detection. Each queued item holds a
             // decoded image, so an unbounded channel would let a fast disk turn into hundreds of
@@ -97,7 +105,7 @@ public sealed class DetectFacesUseCase(
                 }
 
                 processed++;
-                progress.Report(new ProgressUpdate("Detecting faces", processed, null, work.Photo.Path));
+                progress.Report(new ProgressUpdate("Detecting faces", processed, total, work.Photo.Path));
             }
 
             await producer.ConfigureAwait(false);
@@ -216,6 +224,12 @@ public sealed class DetectFacesUseCase(
         await thumbnails.GetOrCreateAsync(work.Photo.Id, work.Photo.Path, ct).ConfigureAwait(false);
 
         await photoWriter.SetStateAsync(work.Photo.Id, PhotoState.Detected, null, ct).ConfigureAwait(false);
+
+        // Recorded even when nothing was found, so a photograph containing no people is not
+        // examined again on every subsequent run.
+        await photoWriter
+            .RecordDetectionAsync(work.Photo.Id, detectorId, detectorVersion, kept.Count, ct)
+            .ConfigureAwait(false);
 
         return (kept.Count, rejected);
     }

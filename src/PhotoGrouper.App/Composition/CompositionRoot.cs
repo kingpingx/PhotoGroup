@@ -38,6 +38,10 @@ public static class CompositionRoot
         services.AddSingleton<IScanRootRepository, SqliteScanRootRepository>();
         services.AddSingleton<IFaceRepository, SqliteFaceRepository>();
         services.AddSingleton<IPersonRepository, SqlitePersonRepository>();
+        services.AddSingleton<IEmbeddingRepository, SqliteEmbeddingRepository>();
+        services.AddSingleton<IClusterRepository, SqliteClusterRepository>();
+        services.AddSingleton<IFaceLinkRepository, SqliteFaceLinkRepository>();
+        services.AddSingleton<IStoreMaintenance, SqliteStoreMaintenance>();
         services.AddSingleton<IUnitOfWork, SqliteUnitOfWork>();
 
         // Platform adapters.
@@ -55,16 +59,31 @@ public static class CompositionRoot
         services.AddSingleton(_ => new ModelStore(AppPaths.Models));
         services.AddSingleton(_ => new OnnxSessionFactory(preferGpu: true));
         services.AddSingleton<DetectorRegistry>();
+        services.AddSingleton<IFaceAligner, OpenCvFaceAligner>();
+
+        // Exact search rather than an approximate index. The all-pairs comparison happens once,
+        // in the background, and at this scale takes a couple of minutes; an approximate index
+        // would trade that for recall tuning and an index file to keep in step with the database.
+        services.AddSingleton<IVectorIndex, BruteForceVectorIndex>();
 
         // Use cases.
         services.AddSingleton<ScanLibraryUseCase>();
         services.AddSingleton<ManageScanRootsUseCase>();
         services.AddSingleton<DetectFacesUseCase>();
+        services.AddSingleton<EmbedFacesUseCase>();
+        services.AddSingleton<ClusterFacesUseCase>();
+        services.AddSingleton<NamePersonUseCase>();
+        services.AddSingleton<ResetLibraryUseCase>();
+        services.AddSingleton<ManagePeopleUseCase>();
 
         // Presentation.
+        services.AddSingleton<LibraryChangedNotifier>();
         services.AddSingleton<ThumbnailLoader>();
         services.AddSingleton<FaceOverlayViewModel>();
         services.AddSingleton<LibraryViewModel>();
+        services.AddSingleton<PersonDetailViewModel>();
+        services.AddSingleton<PeopleViewModel>();
+        services.AddSingleton<SettingsViewModel>();
         services.AddSingleton<MainWindowViewModel>();
 
         return services.BuildServiceProvider();

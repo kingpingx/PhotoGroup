@@ -1,0 +1,237 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:PhotoGrouper.App.ViewModels"
+             x:Class="PhotoGrouper.App.Views.PeopleView"
+             x:DataType="vm:PeopleViewModel">
+
+    <Grid>
+    <Grid RowDefinitions="Auto,*,Auto" Margin="28,22">
+
+        <Border Grid.Row="0" Classes="card" Padding="20,16" Margin="0,0,0,18">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <StackPanel Grid.Column="0" Spacing="6">
+                    <TextBlock Text="RECOGNISE AND GROUP" Classes="label" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="Group faces into people" Classes="primary"
+                                Command="{Binding GroupCommand}" />
+                        <Button Content="Stop" Classes="danger" Command="{Binding CancelCommand}"
+                                IsVisible="{Binding IsBusy}" />
+                    </StackPanel>
+                </StackPanel>
+
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="20"
+                            VerticalAlignment="Center">
+                    <StackPanel>
+                        <TextBlock Text="{Binding NamedPeopleCount, StringFormat='{}{0:N0}'}"
+                                   FontSize="22" FontWeight="Bold" HorizontalAlignment="Right"
+                                   Foreground="{StaticResource Success}" />
+                        <TextBlock Text="NAMED" Classes="label" HorizontalAlignment="Right" />
+                    </StackPanel>
+                    <StackPanel>
+                        <TextBlock Text="{Binding UnnamedGroupCount, StringFormat='{}{0:N0}'}"
+                                   FontSize="22" FontWeight="Bold" HorizontalAlignment="Right"
+                                   Foreground="{StaticResource Accent}" />
+                        <TextBlock Text="TO NAME" Classes="label" HorizontalAlignment="Right" />
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="1" Classes="card" Padding="40"
+                IsVisible="{Binding !HasGroups}"
+                VerticalAlignment="Center" HorizontalAlignment="Center">
+            <StackPanel Spacing="10" HorizontalAlignment="Center">
+                <TextBlock Text="◉" FontSize="34" HorizontalAlignment="Center"
+                           Foreground="{StaticResource Accent}" />
+                <TextBlock Text="Nobody grouped yet" Classes="heading" HorizontalAlignment="Center" />
+                <TextBlock Classes="muted" HorizontalAlignment="Center" MaxWidth="380"
+                           TextWrapping="Wrap" TextAlignment="Center"
+                           Text="Find faces in the Library step first, then group them here. The recognition model is downloaded once, on the first run." />
+            </StackPanel>
+        </Border>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" IsVisible="{Binding HasGroups}">
+            <StackPanel Spacing="22">
+
+                <!-- Named people first: once somebody has a name, they are what the user came for. -->
+                <StackPanel Spacing="10" IsVisible="{Binding NamedPeopleCount}">
+                    <TextBlock Text="PEOPLE" Classes="label" />
+                    <ItemsControl ItemsSource="{Binding NamedPeople}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:PersonTileViewModel">
+                                <Button Classes="ghost" Padding="0" Margin="0,0,12,12"
+                                        Command="{Binding $parent[ItemsControl].((vm:PeopleViewModel)DataContext).OpenPersonCommand}"
+                                        CommandParameter="{Binding}"
+                                        ToolTip.Tip="Open to rename, remove photos, or delete">
+                                    <Border Classes="tile" Width="176" Padding="16">
+                                        <StackPanel Spacing="8">
+                                            <Border Width="38" Height="38" CornerRadius="19"
+                                                    Background="{StaticResource AccentGradient}"
+                                                    HorizontalAlignment="Left">
+                                                <TextBlock Text="{Binding Initial}" Foreground="#05080F"
+                                                           FontSize="17" FontWeight="Bold"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                            </Border>
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       HorizontalAlignment="Left" />
+                                            <TextBlock Text="{Binding Caption}" Classes="muted" FontSize="11"
+                                                       HorizontalAlignment="Left" />
+                                        </StackPanel>
+                                    </Border>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <!-- Naming a group is the core interaction of the application, so the box sits
+                     directly on the tile rather than behind a dialog, and Enter completes it. -->
+                <StackPanel Spacing="10" IsVisible="{Binding UnnamedGroupCount}">
+                    <TextBlock Text="WHO ARE THESE?" Classes="label" />
+                    <ItemsControl ItemsSource="{Binding UnnamedGroups}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ClusterTileViewModel">
+                                <Border Classes="tile" Width="212" Margin="0,0,14,14" Padding="12"
+                                        AttachedToVisualTree="OnGroupAttached">
+                                    <StackPanel Spacing="10">
+                                        <Border Height="158" CornerRadius="8" ClipToBounds="True"
+                                                Background="{StaticResource SurfaceDeep}">
+                                            <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                                        </Border>
+                                        <TextBlock Text="{Binding Caption}" Classes="muted" FontSize="11" />
+                                        <TextBox Text="{Binding ProposedName}"
+                                                 Watermark="Type a name, press Enter"
+                                                 KeyDown="OnNameKeyDown" />
+                                        <Button Content="Name this person" Classes="primary"
+                                                HorizontalAlignment="Stretch"
+                                                HorizontalContentAlignment="Center"
+                                                Command="{Binding $parent[ItemsControl].((vm:PeopleViewModel)DataContext).NameCommand}"
+                                                CommandParameter="{Binding}" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+
+        <Border Grid.Row="2" Classes="card" Padding="16,12" Margin="0,16,0,0">
+            <StackPanel Spacing="8">
+                <ProgressBar IsVisible="{Binding IsBusy}"
+                             IsIndeterminate="{Binding IsProgressIndeterminate}"
+                             Value="{Binding ProgressFraction}" Maximum="1" />
+                <TextBlock Text="{Binding Status}" Classes="muted" TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
+    </Grid>
+
+    <!-- Correction panel for one person. Overlaid rather than made a separate step, because fixing
+         a grouping is done while looking at the people, not somewhere to navigate to. -->
+    <Border IsVisible="{Binding Detail.IsOpen}" Background="#F2050810"
+            PointerPressed="OnDetailBackgroundPressed">
+        <!-- Transparent rather than unset: a panel with no background is not hit-testable at all,
+             so clicks in the gaps between photographs would fall straight through to the dimmed
+             area behind and close the panel somebody was working in. -->
+        <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="32,26"
+              Background="Transparent"
+              PointerPressed="OnDetailContentPressed">
+
+            <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,16">
+                <Button Grid.Column="0" Content="← Back" Command="{Binding Detail.CloseCommand}"
+                        VerticalAlignment="Center" Margin="0,0,16,0" />
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Detail.PersonName}" Classes="heading" />
+                    <TextBlock Text="{Binding Detail.SelectionCaption}" Classes="muted" />
+                </StackPanel>
+                <TextBlock Grid.Column="2" Classes="muted" VerticalAlignment="Center"
+                           Text="Esc to go back" />
+            </Grid>
+
+            <Border Grid.Row="1" Classes="card" Padding="16" Margin="0,0,0,14">
+                <StackPanel Spacing="12">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <TextBlock Text="NAME" Classes="label" VerticalAlignment="Center" />
+                        <TextBox Text="{Binding Detail.EditedName}" Watermark="Person's name"
+                                 MinWidth="240" />
+                        <Button Content="Rename" Command="{Binding Detail.RenameCommand}" />
+                        <Border Width="1" Background="{StaticResource BorderSubtle}" Margin="8,2" />
+                        <Button Content="Select all" Command="{Binding Detail.SelectAllCommand}" />
+                        <Button Content="Clear selection" Command="{Binding Detail.ClearSelectionCommand}" />
+                        <Button Classes="danger" Content="{Binding Detail.SelectionCaption}"
+                                Command="{Binding Detail.RemoveSelectedCommand}" />
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" Spacing="10"
+                                IsVisible="{Binding !Detail.IsConfirmingDelete}">
+                        <Button Content="Remove this person" Classes="danger"
+                                Command="{Binding Detail.BeginDeleteCommand}" />
+                        <TextBlock Classes="muted" VerticalAlignment="Center"
+                                   Text="Their photos stay in the library and can be named again." />
+                    </StackPanel>
+
+                    <Border IsVisible="{Binding Detail.IsConfirmingDelete}"
+                            CornerRadius="8" Padding="14" Background="#33FF5C7A">
+                        <StackPanel Spacing="10">
+                            <TextBlock TextWrapping="Wrap" FontSize="12"
+                                       Text="Remove this person? The name is deleted; the photos and faces are kept, and their group becomes available to name again." />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Content="Yes, remove" Classes="danger"
+                                        Command="{Binding Detail.ConfirmDeleteCommand}" />
+                                <Button Content="Cancel" Command="{Binding Detail.CancelDeleteCommand}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Border>
+
+            <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                <ItemsRepeater ItemsSource="{Binding Detail.Photos}"
+                               ElementPrepared="OnPersonPhotoPrepared">
+                    <ItemsRepeater.Layout>
+                        <UniformGridLayout ItemsStretch="None"
+                                           MinItemWidth="168" MinItemHeight="168"
+                                           MinColumnSpacing="10" MinRowSpacing="10" />
+                    </ItemsRepeater.Layout>
+                    <ItemsRepeater.ItemTemplate>
+                        <DataTemplate x:DataType="vm:PersonPhotoViewModel">
+                            <Border Width="168" Height="168" Classes="tile" Cursor="Hand"
+                                    ClipToBounds="True" PointerPressed="OnPersonPhotoPressed"
+                                    ToolTip.Tip="{Binding FileName}">
+                                <Grid>
+                                    <Image Source="{Binding Thumbnail}" Stretch="UniformToFill" Margin="5" />
+
+                                    <!-- Selection is a tinted overlay with a tick rather than a
+                                         checkbox in a corner, so it stays legible over a
+                                         photograph of any brightness. -->
+                                    <Border IsVisible="{Binding IsSelected}"
+                                            Background="#5900D9FF" BorderThickness="2"
+                                            BorderBrush="{StaticResource Accent}" CornerRadius="9" />
+                                    <TextBlock Text="&#x2713;" IsVisible="{Binding IsSelected}"
+                                               FontSize="34" FontWeight="Bold" Foreground="White"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsRepeater.ItemTemplate>
+                </ItemsRepeater>
+            </ScrollViewer>
+
+            <TextBlock Grid.Row="3" Text="{Binding Detail.Status}"
+                       Foreground="{StaticResource Accent}" FontSize="12"
+                       TextWrapping="Wrap" Margin="0,14,0,0" />
+        </Grid>
+    </Border>
+    </Grid>
+</UserControl>

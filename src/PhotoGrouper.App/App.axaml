@@ -4,5 +4,6 @@
              RequestedThemeVariant="Default">
     <Application.Styles>
         <FluentTheme />
+        <StyleInclude Source="avares://PhotoGrouper.App/Styles/AppTheme.axaml" />
     </Application.Styles>
 </Application>

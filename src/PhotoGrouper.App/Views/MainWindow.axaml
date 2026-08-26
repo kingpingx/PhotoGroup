@@ -4,29 +4,117 @@
         xmlns:views="using:PhotoGrouper.App.Views"
         x:Class="PhotoGrouper.App.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
-        Title="{Binding Title}"
-        Width="1200" Height="800"
-        MinWidth="820" MinHeight="520">
+        Title="PhotoGrouper"
+        Width="1360" Height="880"
+        MinWidth="980" MinHeight="620"
+        Background="{StaticResource SurfaceDeep}">
 
-    <Grid ColumnDefinitions="220,*">
+    <Grid RowDefinitions="Auto,*">
 
-        <!-- Left navigation. Only Library is implemented; the rest are shown disabled so
-             the intended shape of the app is visible while it is being built. -->
-        <Border Grid.Column="0" Background="{DynamicResource SystemControlBackgroundListLowBrush}">
-            <StackPanel Margin="12,16" Spacing="4">
-                <TextBlock Text="PhotoGrouper" FontSize="18" FontWeight="SemiBold" Margin="8,0,0,16" />
-                <ListBox SelectedIndex="0" Background="Transparent" BorderThickness="0">
-                    <ListBoxItem Content="Library" />
-                    <ListBoxItem Content="People" IsEnabled="False" />
-                    <ListBoxItem Content="Search" IsEnabled="False" />
-                    <ListBoxItem Content="Review" IsEnabled="False" />
-                    <ListBoxItem Content="Organize" IsEnabled="False" />
-                    <ListBoxItem Content="Settings" IsEnabled="False" />
-                </ListBox>
-            </StackPanel>
+        <!-- The workflow header.
+
+             Replaces a list of destinations down the left side. This application is a sequence,
+             not a set of unrelated screens, and a numbered flow across the top says so: photos
+             before faces, faces before people, people before organising by them. The caption under
+             each step reports what that stage has actually produced, which answers the question a
+             sidebar never could, namely whether the last thing you pressed did anything. -->
+        <Border Grid.Row="0" Background="{StaticResource HeaderGradient}"
+                BorderBrush="{StaticResource BorderSubtle}" BorderThickness="0,0,0,1"
+                Padding="28,18">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12"
+                            VerticalAlignment="Center" Margin="0,0,44,0">
+                    <Border Width="30" Height="30" CornerRadius="9"
+                            Background="{StaticResource AccentGradient}" />
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="PHOTOGROUPER" FontSize="14" FontWeight="Bold"
+                                   LetterSpacing="2.2" />
+                        <TextBlock Text="find everyone, everywhere" Classes="muted" FontSize="10" />
+                    </StackPanel>
+                </StackPanel>
+
+                <ItemsControl Grid.Column="1" ItemsSource="{Binding Steps}" VerticalAlignment="Center">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:WorkflowStep">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+
+                                <Button Classes="ghost" Padding="14,8"
+                                        IsEnabled="{Binding IsAvailable}"
+                                        Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).SelectCommand}"
+                                        CommandParameter="{Binding}">
+                                    <StackPanel Orientation="Horizontal" Spacing="11">
+
+                                        <!-- The marker carries the state: dim by default, accented
+                                             when current, ticked once the stage has produced
+                                             something real. -->
+                                        <Panel Width="30" Height="30">
+                                            <Ellipse Fill="{StaticResource SurfaceRaised}"
+                                                     Stroke="{StaticResource BorderSubtle}" StrokeThickness="1" />
+                                            <Ellipse Fill="{StaticResource AccentDim}"
+                                                     Stroke="{StaticResource Accent}" StrokeThickness="1.5"
+                                                     IsVisible="{Binding IsCurrent}" />
+                                            <Ellipse Fill="Transparent"
+                                                     Stroke="{StaticResource Success}" StrokeThickness="1.5"
+                                                     IsVisible="{Binding IsComplete}" />
+                                            <TextBlock Text="{Binding Number}"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                       FontSize="12" FontWeight="SemiBold"
+                                                       IsVisible="{Binding !IsComplete}" />
+                                            <TextBlock Text="✓" Foreground="{StaticResource Success}"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                       FontSize="14" FontWeight="Bold"
+                                                       IsVisible="{Binding IsComplete}" />
+                                        </Panel>
+
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Title}" FontSize="13" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding Caption}" Classes="muted" FontSize="10" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Button>
+
+                                <!-- Connector, drawn between steps to make the order literal. -->
+                                <Rectangle Width="30" Height="1" Margin="4,0"
+                                           Fill="{StaticResource BorderSubtle}"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- Settings sits outside the numbered flow: it is not a stage of the work. -->
+                <Button Grid.Column="2" Classes="ghost" VerticalAlignment="Center"
+                        Command="{Binding ShowSettingsCommand}"
+                        ToolTip.Tip="Settings">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="⚙" FontSize="16" />
+                        <TextBlock Text="Settings" FontSize="12" />
+                    </StackPanel>
+                </Button>
+            </Grid>
         </Border>
 
-        <views:LibraryView Grid.Column="1" DataContext="{Binding Library}" />
-
+        <!-- Visibility is set on wrappers rather than on the views themselves, because each view
+             takes its own section as its data context and would no longer be able to see the
+             shell's own properties. All three stay in the tree and are merely hidden: each holds
+             loaded thumbnails and a scroll position, and rebuilding those every time somebody
+             glances at another step would be slow and would lose their place. -->
+        <Panel Grid.Row="1">
+            <Panel IsVisible="{Binding IsLibraryVisible}">
+                <views:LibraryView DataContext="{Binding Library}" />
+            </Panel>
+            <Panel IsVisible="{Binding IsPeopleVisible}">
+                <views:PeopleView DataContext="{Binding People}" />
+            </Panel>
+            <Panel IsVisible="{Binding IsSettingsVisible}">
+                <views:SettingsView DataContext="{Binding Settings}" />
+            </Panel>
+        </Panel>
     </Grid>
 </Window>

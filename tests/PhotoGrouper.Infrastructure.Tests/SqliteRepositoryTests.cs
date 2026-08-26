@@ -49,6 +49,19 @@ public sealed class SqliteFaceRepositoryTests : FaceRepositoryContract, IDisposa
     public void Dispose() => _database.Dispose();
 }
 
+public sealed class SqliteEmbeddingRepositoryTests : EmbeddingRepositoryContract, IDisposable
+{
+    private readonly TemporaryDatabase _database = new();
+
+    protected override Task<EmbeddingContext> CreateAsync() =>
+        Task.FromResult(new EmbeddingContext(
+            new SqliteEmbeddingRepository(_database.Connections),
+            new SqliteFaceRepository(_database.Connections),
+            new SqlitePhotoRepository(_database.Connections)));
+
+    public void Dispose() => _database.Dispose();
+}
+
 /// <summary>A migrated database in a temporary file, deleted when the test finishes.</summary>
 /// <remarks>
 /// A file rather than an in-memory database because the point is to exercise the real thing:

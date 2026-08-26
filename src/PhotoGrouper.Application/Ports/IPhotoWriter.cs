@@ -41,4 +41,15 @@ public interface IPhotoWriter
     /// the space face coordinates live in.
     /// </remarks>
     Task UpdateImageDetailsAsync(PhotoId id, ImageDetails details, CancellationToken ct);
+
+    /// <summary>
+    /// Records that a detector has examined a photograph, and what it found.
+    /// </summary>
+    /// <remarks>
+    /// Written even when nothing was found. "Examined and found nobody" and "not yet examined"
+    /// are different, and without recording the former every photograph containing no people
+    /// would be examined again on every run.
+    /// </remarks>
+    Task RecordDetectionAsync(
+        PhotoId id, string detectorId, string detectorVersion, int faceCount, CancellationToken ct);
 }

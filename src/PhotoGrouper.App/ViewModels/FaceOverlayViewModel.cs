@@ -29,6 +29,10 @@ public sealed partial class FaceOverlayViewModel(IImageDecoder decoder, IFaceRep
     [ObservableProperty]
     private bool _isVisible;
 
+    /// <summary>Where this photograph sits in the library, such as "3 of 21".</summary>
+    [ObservableProperty]
+    private string _position = string.Empty;
+
     /// <summary>Face marks in the coordinate space of the displayed bitmap.</summary>
     public List<FaceMark> Marks { get; } = [];
 

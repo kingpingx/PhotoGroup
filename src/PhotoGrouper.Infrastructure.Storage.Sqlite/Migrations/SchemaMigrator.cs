@@ -15,6 +15,7 @@ public sealed class SchemaMigrator(SqliteConnectionFactory connections)
     private static readonly IReadOnlyList<Migration> Migrations =
     [
         new(1, "initial", SqlScripts.V1Initial),
+        new(2, "photo-detections", SqlScripts.V2PhotoDetections),
     ];
 
     public int CurrentVersion { get; private set; }
