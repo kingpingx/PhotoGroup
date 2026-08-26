@@ -59,8 +59,29 @@ public sealed partial class PeopleViewModel(
         });
     }
 
-    /// <summary>Groups that have not been named yet, largest first.</summary>
+    /// <summary>Groups of two or more faces awaiting a name, largest first.</summary>
     public ObservableCollection<ClusterTileViewModel> UnnamedGroups { get; } = [];
+
+    /// <summary>
+    /// People who appear exactly once.
+    /// </summary>
+    /// <remarks>
+    /// Shown apart from the rest rather than mixed in. A single face carries no corroboration, so
+    /// these are the least certain groupings and are the most likely to be strangers in the
+    /// background. Kept visible all the same: they used to be discarded, which on a small library
+    /// silently hid a third of the faces, several of them large and confident.
+    /// </remarks>
+    public ObservableCollection<ClusterTileViewModel> SingleAppearances { get; } = [];
+
+    /// <summary>
+    /// How many one-off groups are listed at once.
+    /// </summary>
+    /// <remarks>
+    /// A large library can contain thousands of people photographed once. Showing every one would
+    /// bury the groups that matter and cost a thumbnail decode each; the count of the remainder is
+    /// reported instead.
+    /// </remarks>
+    private const int MaximumSingleAppearancesShown = 60;
 
     public ObservableCollection<PersonTileViewModel> NamedPeople { get; } = [];
 
@@ -86,11 +107,18 @@ public sealed partial class PeopleViewModel(
     [ObservableProperty]
     private int _namedPeopleCount;
 
-    public bool HasGroups => UnnamedGroupCount > 0 || NamedPeopleCount > 0;
+    public bool HasGroups => UnnamedGroupCount > 0 || NamedPeopleCount > 0 || SingleAppearanceCount > 0;
 
     /// <summary>How many faces have been dismissed, so they can be brought back.</summary>
     [ObservableProperty]
     private int _ignoredFaceCount;
+
+    [ObservableProperty]
+    private int _singleAppearanceCount;
+
+    /// <summary>One-off groups beyond the display cap, reported rather than silently omitted.</summary>
+    [ObservableProperty]
+    private int _hiddenSingleAppearanceCount;
 
     public string EmbedderId => ArcFaceEmbedder.Provider.Id;
 
@@ -121,10 +149,24 @@ public sealed partial class PeopleViewModel(
         UnnamedGroups.Clear();
         NamedPeople.Clear();
 
+        SingleAppearances.Clear();
+
         foreach (var record in records.Where(r => r.PersonId is null))
         {
-            UnnamedGroups.Add(new ClusterTileViewModel(record, thumbnails, faces, photos));
+            var tile = new ClusterTileViewModel(record, thumbnails, faces, photos);
+
+            if (record.Size >= ClusterFacesUseCase.MinimumClusterSize)
+            {
+                UnnamedGroups.Add(tile);
+            }
+            else if (SingleAppearances.Count < MaximumSingleAppearancesShown)
+            {
+                SingleAppearances.Add(tile);
+            }
         }
+
+        SingleAppearanceCount = records.Count(r => r.PersonId is null && r.Size < ClusterFacesUseCase.MinimumClusterSize);
+        HiddenSingleAppearanceCount = Math.Max(0, SingleAppearanceCount - SingleAppearances.Count);
 
         foreach (var person in named)
         {
@@ -136,6 +178,7 @@ public sealed partial class PeopleViewModel(
         NamedPeopleCount = NamedPeople.Count;
         IgnoredFaceCount = await ignoreGroup.CountAsync(ct).ConfigureAwait(true);
         OnPropertyChanged(nameof(HasGroups));
+        OnPropertyChanged(nameof(SingleAppearanceCaption));
 
         if (records.Count == 0 && named.Count == 0)
         {
@@ -246,6 +289,10 @@ public sealed partial class PeopleViewModel(
 
     [RelayCommand(CanExecute = nameof(IsBusy))]
     private void Cancel() => _cancellation?.Cancel();
+
+    public string SingleAppearanceCaption => HiddenSingleAppearanceCount > 0
+        ? $"APPEARS ONCE — showing {SingleAppearances.Count:N0} of {SingleAppearanceCount:N0}"
+        : "APPEARS ONCE";
 
     /// <summary>Dismisses a group of faces the user does not want to name.</summary>
     /// <remarks>

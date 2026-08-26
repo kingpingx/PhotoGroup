@@ -23,8 +23,16 @@ public sealed class OnnxSessionFactory(bool preferGpu = true)
     /// <summary>Why the GPU was not used, when it was requested but unavailable.</summary>
     public string? GpuUnavailableReason { get; private set; }
 
+    /// <summary>
+    /// True when a Direct3D 12 device is available to accelerate inference.
+    /// </summary>
+    /// <remarks>
+    /// DirectML exists only on Windows. Everywhere else this is false and inference runs on the
+    /// processor, which is slower but correct, and produces identical vectors.
+    /// </remarks>
     public static bool IsDirectMlAvailable =>
-        OrtEnv.Instance().GetAvailableProviders().Any(p => p.Contains("Dml", StringComparison.OrdinalIgnoreCase));
+        OperatingSystem.IsWindows()
+        && OrtEnv.Instance().GetAvailableProviders().Any(p => p.Contains("Dml", StringComparison.OrdinalIgnoreCase));
 
     public InferenceSession Create(string modelPath)
     {
@@ -49,12 +57,22 @@ public sealed class OnnxSessionFactory(bool preferGpu = true)
         }
         else if (preferGpu)
         {
-            GpuUnavailableReason = "No DirectML-capable device was found.";
+            GpuUnavailableReason = OperatingSystem.IsWindows()
+                ? "No DirectML-capable device was found."
+                : "GPU acceleration uses DirectML, which is only available on Windows.";
         }
 
         LastSessionUsedGpu = false;
         return new InferenceSession(modelPath, CreateOptions(useGpu: false));
     }
+
+    /// <remarks>
+    /// Isolated and attributed so the call is compiled out of consideration on platforms where the
+    /// method does not exist. Callers never reach it, because <see cref="IsDirectMlAvailable"/>
+    /// is false there.
+    /// </remarks>
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    private static void AppendDirectMl(SessionOptions options) => options.AppendExecutionProvider_DML(0);
 
     private static SessionOptions CreateOptions(bool useGpu)
     {
@@ -66,10 +84,15 @@ public sealed class OnnxSessionFactory(bool preferGpu = true)
 
         if (useGpu)
         {
+#if DIRECTML
             // DirectML requires sequential execution; the parallel executor is unsupported and
             // silently degrades or faults depending on the driver.
             options.ExecutionMode = ExecutionMode.ORT_SEQUENTIAL;
             options.AppendExecutionProvider_DML(0);
+#else
+            throw new PlatformNotSupportedException(
+                "GPU inference is only built on Windows; IsDirectMlAvailable should have prevented this.");
+#endif
         }
         else
         {

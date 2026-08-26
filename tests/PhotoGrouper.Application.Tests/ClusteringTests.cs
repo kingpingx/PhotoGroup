@@ -43,6 +43,19 @@ public sealed class ChineseWhispersTests
         ChineseWhispers.Cluster([]).Should().BeEmpty();
 
     [Fact]
+    public void Faces_that_match_nothing_are_kept_rather_than_discarded()
+    {
+        // Regression. One-off faces used to be dropped on the reasoning that a face matching
+        // nothing is usually a stranger. On a small library that silently hid a third of the
+        // faces, including large, confident detections of people who simply appear once, with
+        // nowhere in the application to see them. They are grouped now and shown separately.
+        var labels = ChineseWhispers.Cluster(Graph(5, (0, 1, 0.9f)));
+
+        labels.Should().HaveCount(5, "every face gets a label, including the ones matching nothing");
+        GroupCount(labels).Should().Be(4, "two faces join up; the other three stand alone");
+    }
+
+    [Fact]
     public void A_face_with_no_neighbours_keeps_its_own_group()
     {
         // The right answer for somebody photographed once. Forcing them into a group with the

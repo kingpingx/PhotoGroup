@@ -3,9 +3,23 @@
   <ItemGroup>
     <!-- Pinned to the 4.11 line: 4.12+ ship an analyzer built against a newer Roslyn than
          the .NET 8 SDK provides. -->
-    <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.24.4" />
     <PackageReference Include="OpenCvSharp4" Version="4.11.0.20250507" />
+  </ItemGroup>
+
+  <!-- DirectML is a Direct3D 12 component and exists only on Windows. Elsewhere the plain runtime
+       is used, which runs on the processor; OnnxSessionFactory already falls back to it whenever a
+       GPU provider is unavailable, so no code path is unique to one platform. -->
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.24.4" />
     <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.11.0.20250507" />
+  </ItemGroup>
+
+  <ItemGroup Condition="!$([MSBuild]::IsOSPlatform('Windows'))">
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.20.1" />
+  </ItemGroup>
+
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
+    <PackageReference Include="OpenCvSharp4.official.runtime.linux-x64" Version="4.11.0.20250507" />
   </ItemGroup>
 
   <ItemGroup>
@@ -20,4 +34,33 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <!-- Native runtimes are chosen for the machine doing the build. OpenCvSharp, ImageMagick and
+       ONNX Runtime all ship platform-specific binaries, and referencing the wrong one produces a
+       project that restores happily and then fails to load a library at run time.
+
+       macOS has no current OpenCvSharp runtime package: the newest published is a 4.6 build from
+       2023, x64 only, with nothing for Apple Silicon. Building there means supplying an OpenCV
+       native library yourself. -->
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+
+  </ItemGroup>
+
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
+    <PackageReference Include="OpenCvSharp4.official.runtime.linux-x64" Version="4.11.0.20250507" />
+  </ItemGroup>
+
+  <!-- DirectML is a Direct3D 12 API and exists only on Windows. Elsewhere the plain package
+       provides the same managed surface without it, and inference runs on the processor. The
+       constant lets the one call that mentions DirectML compile only where it exists. -->
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+
+  </ItemGroup>
+
+  <ItemGroup Condition="!$([MSBuild]::IsOSPlatform('Windows'))">
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.20.1" />
+  </ItemGroup>
+
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+    <DefineConstants>$(DefineConstants);DIRECTML</DefineConstants>
+  </PropertyGroup>
 </Project>

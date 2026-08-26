@@ -6,12 +6,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Magick.NET-Q8-x64" Version="14.16.0" />
+    <!-- AnyCPU rather than the x64 build: the same version, without pinning to Windows. -->
+    <PackageReference Include="Magick.NET-Q8-AnyCPU" Version="14.16.0" />
     <PackageReference Include="MetadataExtractor" Version="2.9.3" />
     <!-- Pinned to the 4.11 line: 4.12+ ship an analyzer built against a newer Roslyn than
          the .NET 8 SDK provides, and ExcludeAssets does not stop the SDK from loading it. -->
     <PackageReference Include="OpenCvSharp4" Version="4.11.0.20250507" />
-    <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.11.0.20250507" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -19,5 +19,30 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
+
+  <!-- Native runtimes are chosen for the machine doing the build. OpenCvSharp, ImageMagick and
+       ONNX Runtime all ship platform-specific binaries, and referencing the wrong one produces a
+       project that restores happily and then fails to load a library at run time.
+
+       macOS has no current OpenCvSharp runtime package: the newest published is a 4.6 build from
+       2023, x64 only, with nothing for Apple Silicon. Building there means supplying an OpenCV
+       native library yourself. -->
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+  </ItemGroup>
+
+  <!-- OpenCV's managed wrapper is portable; its native library is not, so the runtime package is
+       chosen per platform. The versions must match the managed package exactly, which is why the
+       Linux reference is pinned to the same build rather than the newest available. -->
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+    <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.11.0.20250507" />
+  </ItemGroup>
+
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
+    <PackageReference Include="OpenCvSharp4.official.runtime.linux-x64" Version="4.11.0.20250507" />
+  </ItemGroup>
+
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
+    <PackageReference Include="OpenCvSharp4.official.runtime.linux-x64" Version="4.11.0.20250507" />
+  </ItemGroup>
 
 </Project>

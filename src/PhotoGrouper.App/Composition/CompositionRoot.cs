@@ -46,7 +46,7 @@ public static class CompositionRoot
         services.AddSingleton<IUnitOfWork, SqliteUnitOfWork>();
 
         // Platform adapters.
-        services.AddSingleton<IFileSystem, WindowsFileSystem>();
+        services.AddSingleton<IFileSystem, LocalFileSystem>();
         services.AddSingleton<IClock, SystemClock>();
 
         // Imaging. The composite decoder is the extension point for new formats: adding RAW

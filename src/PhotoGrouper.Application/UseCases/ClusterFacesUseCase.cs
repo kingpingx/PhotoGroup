@@ -60,12 +60,17 @@ public sealed class ClusterFacesUseCase(
     public const float DefaultSimilarityThreshold = 0.35f;
 
     /// <summary>
-    /// Smallest group that becomes a candidate person.
+    /// Smallest group treated as a person likely to be worth naming.
     /// </summary>
     /// <remarks>
-    /// A single face matching nothing else is usually a stranger in the background or a poor
-    /// detection, not someone the user wants to name. Those go to the unsorted pile rather than
-    /// filling the People page with hundreds of entries of one photograph each.
+    /// Groups below this are still created and still shown, just separately. They used to be
+    /// discarded outright, on the reasoning that a face matching nothing else is usually a stranger
+    /// in the background. That reasoning holds for a large library and fails badly for a small one:
+    /// on a library of thirty photographs it silently hid a third of the faces, including several
+    /// large, confident detections of people who simply appear once.
+    ///
+    /// Somebody photographed a single time is still somebody, and the user is better placed than a
+    /// threshold to decide whether they matter. Dismissing a group covers the stranger case.
     /// </remarks>
     public const int MinimumClusterSize = 2;
 
@@ -136,15 +141,6 @@ public sealed class ClusterFacesUseCase(
             if (group.Count < MinimumClusterSize)
             {
                 singletons += group.Count;
-
-                // Left without a cluster rather than given one of their own. The People page reads
-                // clusters, and a hundred one-photograph groups would bury the people who matter.
-                foreach (var position in group)
-                {
-                    assignments.Add(new FaceClusterAssignment(vectors[position].FaceId, null));
-                }
-
-                continue;
             }
 
             var clusterId = ClusterId.New();

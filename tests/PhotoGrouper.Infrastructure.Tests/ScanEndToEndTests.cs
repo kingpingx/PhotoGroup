@@ -34,7 +34,7 @@ public sealed class ScanEndToEndTests : IDisposable
     }
 
     private ScanLibraryUseCase CreateSubject() =>
-        new(_roots, _photos, _photos, new WindowsFileSystem(), new SystemClock());
+        new(_roots, _photos, _photos, new LocalFileSystem(), new SystemClock());
 
     /// <remarks>
     /// Content is irrelevant to this milestone: the scanner reads names, sizes and timestamps,

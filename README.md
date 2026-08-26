@@ -1,6 +1,6 @@
 # PhotoGrouper
 
-A local Windows desktop app that finds every photo of a person in your library.
+A local desktop app that finds every photo of a person in your library.
 
 Point it at a folder. It scans the files, detects the faces, works out which faces belong to the
 same person, and lets you name each person once. From then on, "show me every photo of Alice" is a
@@ -26,14 +26,30 @@ exactly where they are.
 | M5 · Export: copy or move into per-person folders | Not started |
 | M6 · Polish, resume hardening, settings | Partly |
 
-Roughly 15,000 lines across 12 projects, with 239 tests.
+Roughly 15,300 lines across 12 projects, with 240 tests.
 
 ---
 
-## Getting started
+## Platforms
 
-Requires the **.NET 8 SDK** and Windows with a Direct3D 12 capable GPU (it falls back to CPU
-without one).
+Requires the **.NET 8 SDK**. The application code is platform-neutral; only the native imaging and
+inference libraries differ, and the build picks the right ones for the machine it runs on.
+
+| | Status | Inference |
+|---|---|---|
+| **Windows** x64 | Supported, developed on | GPU via DirectML, falling back to CPU |
+| **Linux** x64 | Supported | CPU |
+| **macOS** | Needs an OpenCV native library of your own | CPU |
+
+macOS is the awkward one, and the reason is packaging rather than code. The newest published
+OpenCvSharp runtime for macOS is a 4.6 build from 2023, x64 only, with nothing for Apple Silicon.
+Everything else — Avalonia, SQLite, ImageMagick, ONNX Runtime — already runs there. Supplying an
+OpenCV native library yourself is the only missing piece.
+
+GPU acceleration is Windows-only because DirectML is a Direct3D 12 API. Elsewhere inference runs on
+the processor: slower, but it produces identical vectors, so grouping quality is unaffected.
+
+## Getting started
 
 ```
 dotnet build
@@ -88,8 +104,9 @@ times and some twice.
 
 ## Models
 
-Two files are downloaded on first use into `%LOCALAPPDATA%\PhotoGrouper\models`, each verified
-against a known SHA-256 before use.
+Two files are downloaded on first use into the application data folder
+(`%LOCALAPPDATA%\PhotoGrouper\models` on Windows, `~/.local/share/PhotoGrouper/models` on Linux),
+each verified against a known SHA-256 before use.
 
 | Purpose | Model | Size | Licence |
 |---|---|---|---|
@@ -104,7 +121,8 @@ against a known SHA-256 before use.
 
 ### Measured performance
 
-On the development machine (NVIDIA T550 laptop GPU, 4 GB; 16-core CPU), per image or per face:
+Measured on Windows with an NVIDIA T550 laptop GPU (4 GB) and a 16-core CPU, per image or per
+face. Only the CPU column applies on other platforms.
 
 | Stage | CPU | DirectML |
 |---|---|---|
@@ -174,7 +192,8 @@ preprocessing constants are pinned by exact-value tests rather than by behaviour
 
 ## What is stored, and why
 
-The database lives at `%LOCALAPPDATA%\PhotoGrouper\library.db`, with thumbnails beside it.
+The database lives in the application data folder — `%LOCALAPPDATA%\PhotoGrouper\library.db` on
+Windows, `~/.local/share/PhotoGrouper/library.db` on Linux — with thumbnails beside it.
 
 One rule decides what earns a table: **store only what is expensive to recompute, or impossible to
 recompute.**
@@ -221,6 +240,15 @@ Honest list of what does not work yet.
 - **The library grid loads every photo into memory.** Fine at current scale; needs paging before
   50,000 is realistic.
 - **RAW and video are ignored.** The decoder abstraction leaves room for RAW; video is out of scope.
+- **Paths are compared case-insensitively.** Correct on Windows and on a default macOS volume,
+  wrong on Linux, where `Photo.jpg` and `photo.jpg` are two different files and would be treated as
+  one. Changing it means a schema migration, so it is worth deciding before anyone relies on it.
+- **macOS needs an OpenCV native library supplied by hand**, since no current runtime package
+  exists — see Platforms above.
+- **Only the Windows build has actually been run.** The Linux package references and platform
+  guards are in place and the Windows build is unaffected by them, but nobody has started the
+  application on Linux, so treat the first attempt as something to test rather than something
+  known to work.
 
 ---
 

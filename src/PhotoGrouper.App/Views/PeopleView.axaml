@@ -137,6 +137,42 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </StackPanel>
+
+                <!-- People who appear exactly once. Kept apart from the groups above because a
+                     single face has no corroboration, so these are the least certain and the most
+                     likely to be strangers in the background. They used to be discarded entirely,
+                     which on a small library silently hid a third of the faces. -->
+                <StackPanel Spacing="10" IsVisible="{Binding SingleAppearanceCount}">
+                    <TextBlock Text="{Binding SingleAppearanceCaption}" Classes="label" />
+                    <ItemsControl ItemsSource="{Binding SingleAppearances}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ClusterTileViewModel">
+                                <Border Classes="tile" Width="176" Margin="0,0,12,12" Padding="10"
+                                        AttachedToVisualTree="OnGroupAttached">
+                                    <StackPanel Spacing="8">
+                                        <Border Height="122" CornerRadius="8" ClipToBounds="True"
+                                                Background="{StaticResource SurfaceDeep}">
+                                            <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                                        </Border>
+                                        <TextBox Text="{Binding ProposedName}"
+                                                 Watermark="Name, then Enter"
+                                                 FontSize="12" KeyDown="OnNameKeyDown" />
+                                        <Button Content="Not someone I care about" Classes="ghost"
+                                                HorizontalAlignment="Stretch"
+                                                HorizontalContentAlignment="Center" FontSize="11"
+                                                Command="{Binding $parent[ItemsControl].((vm:PeopleViewModel)DataContext).IgnoreCommand}"
+                                                CommandParameter="{Binding}" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
             </StackPanel>
         </ScrollViewer>
 

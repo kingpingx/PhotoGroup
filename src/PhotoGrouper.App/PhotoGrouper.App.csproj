@@ -3,8 +3,18 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
-    <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+
+  <!-- The manifest declares long-path awareness, which is a Windows concept. Applying it elsewhere
+       is at best ignored and at worst a build error. -->
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+  </PropertyGroup>
+
+  <!-- The manifest asks Windows for long-path support and DPI awareness. It has no meaning on
+       other platforms and referencing it there fails the build. -->
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
   <ItemGroup>

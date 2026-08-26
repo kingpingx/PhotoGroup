@@ -5,7 +5,11 @@ using PhotoGrouper.Domain.Common;
 namespace PhotoGrouper.Infrastructure.FileSystem;
 
 /// <summary>Filesystem access backed by System.IO.</summary>
-public sealed class WindowsFileSystem : IFileSystem
+/// <remarks>
+/// Named for the local machine rather than for Windows: every call here is portable, and the
+/// previous name implied a platform tie that never existed in the code.
+/// </remarks>
+public sealed class LocalFileSystem : IFileSystem
 {
     public bool FileExists(string path) => File.Exists(path);
 
@@ -150,10 +154,23 @@ public sealed class WindowsFileSystem : IFileSystem
 
     public void Delete(string path) => File.Delete(path);
 
+    /// <remarks>
+    /// DriveInfo reports the mounted volume on every platform, so this needs no special case; a
+    /// path root is a drive letter on Windows and the mount point on Unix.
+    /// </remarks>
     public long GetAvailableFreeSpace(string path)
     {
         var root = Path.GetPathRoot(Path.GetFullPath(path));
-        return string.IsNullOrEmpty(root) ? 0 : new DriveInfo(root).AvailableFreeSpace;
+
+        try
+        {
+            return string.IsNullOrEmpty(root) ? 0 : new DriveInfo(root).AvailableFreeSpace;
+        }
+        catch (Exception e) when (e is ArgumentException or IOException or UnauthorizedAccessException)
+        {
+            // An unmounted or unusual volume should not stop an export from being planned.
+            return 0;
+        }
     }
 
     public bool AreOnSameVolume(string a, string b)
