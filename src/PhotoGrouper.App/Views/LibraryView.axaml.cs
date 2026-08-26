@@ -49,6 +49,36 @@ public partial class LibraryView : UserControl
         }
     }
 
+    /// <summary>Opens the marked-up inspector for the clicked photo.</summary>
+    private async void OnTilePressed(object? sender, Avalonia.Input.PointerPressedEventArgs e)
+    {
+        if (Model is { } model && sender is Control { DataContext: PhotoTileViewModel tile })
+        {
+            await model.InspectCommand.ExecuteAsync(tile);
+            SyncOverlayMarks();
+        }
+    }
+
+    /// <remarks>
+    /// The marks are pushed onto the drawing control rather than bound, because the source size
+    /// has to be published alongside them. The two must change together: a mark list applied
+    /// against the previous photo's dimensions draws boxes in the wrong places entirely.
+    /// </remarks>
+    private void SyncOverlayMarks()
+    {
+        if (Model is not { } model
+            || this.FindControl<FaceOverlayControl>("OverlayMarks") is not { } marks)
+        {
+            return;
+        }
+
+        marks.SourceSize = model.Overlay.Image is { } image
+            ? new Size(image.PixelSize.Width, image.PixelSize.Height)
+            : default;
+
+        marks.Marks = model.Overlay.Marks.ToArray();
+    }
+
     /// <remarks>
     /// The virtualising panel recycles containers as they scroll, so a tile is told when it
     /// becomes visible and when it is taken away again. That second notification is what

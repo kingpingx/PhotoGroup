@@ -73,6 +73,15 @@ public sealed class InMemoryPhotoRepository : IPhotoReader, IPhotoWriter
         return Task.CompletedTask;
     }
 
+    public Task UpdateImageDetailsAsync(PhotoId id, ImageDetails details, CancellationToken ct)
+    {
+        RecordedDetails[id] = details;
+        return Task.CompletedTask;
+    }
+
+    /// <summary>What the detection stage recorded about each image, for assertions.</summary>
+    public Dictionary<PhotoId, ImageDetails> RecordedDetails { get; } = [];
+
     public Task UpdatePathAsync(PhotoId id, string newPath, CancellationToken ct)
     {
         if (_byPath.Values.FirstOrDefault(p => p.Id == id) is { } photo)

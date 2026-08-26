@@ -27,6 +27,14 @@
     <ProjectReference Include="..\..\src\PhotoGrouper.Infrastructure.Storage.Sqlite\PhotoGrouper.Infrastructure.Storage.Sqlite.csproj" />
     <ProjectReference Include="..\..\src\PhotoGrouper.Infrastructure.FileSystem\PhotoGrouper.Infrastructure.FileSystem.csproj" />
     <ProjectReference Include="..\PhotoGrouper.Contracts.Tests\PhotoGrouper.Contracts.Tests.csproj" />
+    <ProjectReference Include="..\..\src\PhotoGrouper.Infrastructure.Vision\PhotoGrouper.Infrastructure.Vision.csproj" />
+    <ProjectReference Include="..\..\src\PhotoGrouper.Infrastructure.Imaging\PhotoGrouper.Infrastructure.Imaging.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Synthetic images generated for these tests: an asymmetric pattern saved under several
+         EXIF orientations, plus one HEIC. Nothing here depicts a real person. -->
+    <None Include="fixtures\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

@@ -22,6 +22,8 @@
     <ProjectReference Include="..\PhotoGrouper.Application\PhotoGrouper.Application.csproj" />
     <ProjectReference Include="..\PhotoGrouper.Infrastructure.Storage.Sqlite\PhotoGrouper.Infrastructure.Storage.Sqlite.csproj" />
     <ProjectReference Include="..\PhotoGrouper.Infrastructure.FileSystem\PhotoGrouper.Infrastructure.FileSystem.csproj" />
+    <ProjectReference Include="..\PhotoGrouper.Infrastructure.Vision\PhotoGrouper.Infrastructure.Vision.csproj" />
+    <ProjectReference Include="..\PhotoGrouper.Infrastructure.Imaging\PhotoGrouper.Infrastructure.Imaging.csproj" />
   </ItemGroup>
 
 </Project>

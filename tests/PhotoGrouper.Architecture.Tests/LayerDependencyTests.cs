@@ -19,6 +19,17 @@ namespace PhotoGrouper.Architecture.Tests;
 public sealed class LayerDependencyTests
 {
     private static readonly Assembly Domain = typeof(Domain.Identity.PhotoId).Assembly;
+
+    // Referencing a type from each adapter forces the assembly to load, so the reflection below
+    // finds them rather than silently passing because nothing had touched them yet.
+    private static readonly Assembly[] Adapters =
+    [
+        typeof(Infrastructure.Storage.Sqlite.SqliteStore).Assembly,
+        typeof(Infrastructure.Vision.ModelStore).Assembly,
+        typeof(Infrastructure.Imaging.MatBridge).Assembly,
+        typeof(Infrastructure.FileSystem.SystemClock).Assembly,
+    ];
+
     private static readonly Assembly Application = typeof(Application.Ports.IPhotoReader).Assembly;
 
     private const string DomainAssembly = "PhotoGrouper.Domain";
@@ -88,10 +99,43 @@ public sealed class LayerDependencyTests
         result.FailingTypeNames.Should().BeNullOrEmpty("dependencies point inward, never outward");
     }
 
+    /// <summary>
+    /// Infrastructure adapters must not know about one another, with one stated exception.
+    /// </summary>
     /// <remarks>
-    /// The one rule here that is about presentation rather than layering. A view model that
-    /// can reach a repository will eventually do its own querying, which moves rules out of
-    /// the use cases and into a place that cannot be tested without spinning up a window.
+    /// The plan called for no cross-references at all between adapters. Vision breaks that: it
+    /// needs the conversion between the domain's pixel buffer and OpenCV's Mat, which lives in
+    /// Imaging. The alternatives were to duplicate that conversion or to add a project holding a
+    /// single class, and neither is an improvement on one documented edge.
+    ///
+    /// The rule that genuinely matters is upheld: storage knows nothing of vision or imaging, and
+    /// vision knows nothing of storage. A defect in one cannot propagate into the other, and
+    /// either can be replaced without touching its neighbour.
+    /// </remarks>
+    [Theory]
+    [InlineData("PhotoGrouper.Infrastructure.Storage.Sqlite", new[] { "Vision", "Imaging", "FileSystem" })]
+    [InlineData("PhotoGrouper.Infrastructure.Vision", new[] { "Storage.Sqlite", "FileSystem" })]
+    [InlineData("PhotoGrouper.Infrastructure.FileSystem", new[] { "Storage.Sqlite", "Vision", "Imaging" })]
+    [InlineData("PhotoGrouper.Infrastructure.Imaging", new[] { "Storage.Sqlite", "Vision", "FileSystem" })]
+    public void Infrastructure_adapters_stay_independent(string assemblyName, string[] forbidden)
+    {
+        var assembly = AppDomain.CurrentDomain.GetAssemblies()
+            .FirstOrDefault(a => a.GetName().Name == assemblyName)
+            ?? Assembly.Load(assemblyName);
+
+        var referenced = assembly.GetReferencedAssemblies().Select(a => a.Name!).ToArray();
+
+        foreach (var name in forbidden)
+        {
+            referenced.Should().NotContain($"PhotoGrouper.Infrastructure.{name}",
+                $"{assemblyName} must be replaceable without disturbing the other adapters");
+        }
+    }
+
+    /// <remarks>
+    /// The one rule here about presentation rather than layering. A view model that can reach a
+    /// repository will eventually do its own querying, which moves rules out of the use cases and
+    /// into a place that cannot be tested without spinning up a window.
     /// </remarks>
     [Fact]
     public void ViewModels_do_not_depend_on_repositories_or_storage()

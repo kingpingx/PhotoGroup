@@ -5,7 +5,9 @@ using PhotoGrouper.Application.Ports;
 using PhotoGrouper.Application.UseCases;
 using PhotoGrouper.Infrastructure.FileSystem;
 using PhotoGrouper.Infrastructure.Storage.Sqlite;
+using PhotoGrouper.Infrastructure.Imaging;
 using PhotoGrouper.Infrastructure.Storage.Sqlite.Repositories;
+using PhotoGrouper.Infrastructure.Vision;
 
 namespace PhotoGrouper.App.Composition;
 
@@ -34,18 +36,34 @@ public static class CompositionRoot
         services.AddSingleton<IPhotoReader>(sp => sp.GetRequiredService<SqlitePhotoRepository>());
         services.AddSingleton<IPhotoWriter>(sp => sp.GetRequiredService<SqlitePhotoRepository>());
         services.AddSingleton<IScanRootRepository, SqliteScanRootRepository>();
+        services.AddSingleton<IFaceRepository, SqliteFaceRepository>();
+        services.AddSingleton<IPersonRepository, SqlitePersonRepository>();
         services.AddSingleton<IUnitOfWork, SqliteUnitOfWork>();
 
         // Platform adapters.
         services.AddSingleton<IFileSystem, WindowsFileSystem>();
         services.AddSingleton<IClock, SystemClock>();
 
+        // Imaging. The composite decoder is the extension point for new formats: adding RAW
+        // means registering another decoder inside it, with nothing else aware the set changed.
+        services.AddSingleton<IImageDecoder>(_ => CompositeImageDecoder.CreateDefault());
+        services.AddSingleton<IThumbnailCache>(sp => new DiskThumbnailCache(
+            AppPaths.ThumbnailCache, sp.GetRequiredService<IImageDecoder>()));
+
+        // Vision. Detectors are registered independently of embedders and paired only at the
+        // point of use, so the detector can change without re-embedding anything.
+        services.AddSingleton(_ => new ModelStore(AppPaths.Models));
+        services.AddSingleton(_ => new OnnxSessionFactory(preferGpu: true));
+        services.AddSingleton<DetectorRegistry>();
+
         // Use cases.
         services.AddSingleton<ScanLibraryUseCase>();
         services.AddSingleton<ManageScanRootsUseCase>();
+        services.AddSingleton<DetectFacesUseCase>();
 
         // Presentation.
         services.AddSingleton<ThumbnailLoader>();
+        services.AddSingleton<FaceOverlayViewModel>();
         services.AddSingleton<LibraryViewModel>();
         services.AddSingleton<MainWindowViewModel>();
 

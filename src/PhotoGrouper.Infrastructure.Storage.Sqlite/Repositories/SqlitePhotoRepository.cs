@@ -139,6 +139,26 @@ public sealed class SqlitePhotoRepository(SqliteConnectionFactory connections) :
         await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
+    public async Task UpdateImageDetailsAsync(PhotoId id, ImageDetails details, CancellationToken ct)
+    {
+        await using var connection = connections.Open();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE photos
+            SET width = $width, height = $height, orientation = $orientation,
+                taken_utc = $taken, camera = $camera
+            WHERE id = $id;
+            """;
+        command.Parameters.AddWithValue("$width", details.Width);
+        command.Parameters.AddWithValue("$height", details.Height);
+        command.Parameters.AddWithValue("$orientation", details.Orientation);
+        command.Parameters.AddWithValue(
+            "$taken", details.TakenUtc is { } taken ? SqliteMappings.ToDb(taken) : DBNull.Value);
+        command.Parameters.AddWithValue("$camera", (object?)details.Camera ?? DBNull.Value);
+        command.Parameters.AddWithValue("$id", SqliteMappings.ToDb(id.Value));
+        await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
     /// <remarks>
     /// Conflict is resolved on path rather than id because the scanner identifies a file by
     /// where it lives. Re-indexing a known path must update that row, not insert a second

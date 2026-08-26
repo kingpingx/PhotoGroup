@@ -4,8 +4,9 @@ using CommunityToolkit.Mvvm.Input;
 using PhotoGrouper.App.Services;
 using PhotoGrouper.Application.Ports;
 using PhotoGrouper.Application.UseCases;
-using PhotoGrouper.Domain.Identity;
+using PhotoGrouper.Domain.Faces;
 using PhotoGrouper.Domain.Photos;
+using PhotoGrouper.Infrastructure.Vision;
 
 namespace PhotoGrouper.App.ViewModels;
 
@@ -19,6 +20,8 @@ public sealed partial class LibraryViewModel : ObservableObject
 {
     private readonly ScanLibraryUseCase _scanLibrary;
     private readonly ManageScanRootsUseCase _manageScanRoots;
+    private readonly DetectFacesUseCase _detectFaces;
+    private readonly DetectorRegistry _detectors;
     private readonly IPhotoReader _photos;
     private readonly ThumbnailLoader _thumbnails;
 
@@ -27,14 +30,29 @@ public sealed partial class LibraryViewModel : ObservableObject
     public LibraryViewModel(
         ScanLibraryUseCase scanLibrary,
         ManageScanRootsUseCase manageScanRoots,
+        DetectFacesUseCase detectFaces,
+        DetectorRegistry detectors,
         IPhotoReader photos,
-        ThumbnailLoader thumbnails)
+        ThumbnailLoader thumbnails,
+        FaceOverlayViewModel overlay)
     {
         _scanLibrary = scanLibrary;
         _manageScanRoots = manageScanRoots;
+        _detectFaces = detectFaces;
+        _detectors = detectors;
         _photos = photos;
         _thumbnails = thumbnails;
+        Overlay = overlay;
     }
+
+    public FaceOverlayViewModel Overlay { get; }
+
+    /// <summary>The detectors this build offers, for the toggle.</summary>
+    public IReadOnlyList<ProviderInfo> Detectors { get; } = DetectorRegistry.Available;
+
+    [ObservableProperty]
+    private ProviderInfo _selectedDetector =
+        DetectorRegistry.InfoFor(DetectorRegistry.DefaultDetectorId);
 
     public ObservableCollection<PhotoTileViewModel> Photos { get; } = [];
 
@@ -133,6 +151,98 @@ public sealed partial class LibraryViewModel : ObservableObject
 
     private bool CanScan() => !IsScanning && ScanRoots.Count > 0;
 
+    [RelayCommand(CanExecute = nameof(CanScan))]
+    private async Task DetectAsync()
+    {
+        var cancellation = new CancellationTokenSource();
+        _scanCancellation = cancellation;
+
+        IsScanning = true;
+        IsProgressIndeterminate = true;
+        ScanCommand.NotifyCanExecuteChanged();
+        DetectCommand.NotifyCanExecuteChanged();
+        CancelScanCommand.NotifyCanExecuteChanged();
+
+        var progress = new DelegateProgressSink(update =>
+        {
+            Status = update.Total is { } total
+                ? $"{update.Stage}: {update.Completed:N0} of {total:N0}"
+                : $"{update.Stage}: {update.Completed:N0} photos";
+
+            if (update.Fraction is { } fraction)
+            {
+                IsProgressIndeterminate = false;
+                ProgressFraction = fraction;
+            }
+        });
+
+        try
+        {
+            Status = $"Preparing {SelectedDetector.DisplayName}...";
+
+            // The model is fetched on first use rather than shipped. The first run therefore
+            // pauses here, and saying so is better than appearing to hang.
+            var download = new Progress<double>(fraction =>
+            {
+                IsProgressIndeterminate = false;
+                ProgressFraction = fraction;
+                Status = $"Downloading {SelectedDetector.DisplayName} model... {fraction:P0}";
+            });
+
+            using var detector = await _detectors
+                .CreateAsync(SelectedDetector.Id, download, cancellation.Token)
+                .ConfigureAwait(true);
+
+            IsProgressIndeterminate = true;
+            Status = $"Detecting faces with {detector.Info.DisplayName}...";
+
+            var result = await Task.Run(
+                () => _detectFaces.ExecuteAsync(detector, FaceQuality.Default, progress, cancellation.Token),
+                cancellation.Token).ConfigureAwait(true);
+
+            Status =
+                $"Detection complete. {result.FacesFound:N0} face(s) in {result.PhotosProcessed:N0} photo(s)"
+                + (result.FacesRejected > 0 ? $", {result.FacesRejected:N0} rejected as too small or faint" : string.Empty)
+                + (result.PhotosFailed > 0 ? $", {result.PhotosFailed:N0} unreadable" : string.Empty)
+                + ".";
+
+            await RefreshPhotosAsync(CancellationToken.None).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            Status = "Detection cancelled. Progress so far has been saved.";
+        }
+        catch (ModelUnavailableException e)
+        {
+            Status = e.Message;
+        }
+        finally
+        {
+            IsScanning = false;
+            IsProgressIndeterminate = false;
+            ProgressFraction = 0;
+            _scanCancellation = null;
+            cancellation.Dispose();
+            ScanCommand.NotifyCanExecuteChanged();
+            DetectCommand.NotifyCanExecuteChanged();
+            CancelScanCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    /// <summary>Opens the marked-up view of a photo, for checking detection by eye.</summary>
+    [RelayCommand]
+    private async Task InspectAsync(PhotoTileViewModel? tile)
+    {
+        if (tile is not null)
+        {
+            await Overlay.ShowAsync(tile.Photo, SelectedDetector.Id, CancellationToken.None)
+                .ConfigureAwait(true);
+        }
+    }
+
+    [RelayCommand]
+    private void CloseOverlay() => Overlay.Hide();
+
     [RelayCommand(CanExecute = nameof(IsScanning))]
     private void CancelScan() => _scanCancellation?.Cancel();
 
@@ -160,6 +270,7 @@ public sealed partial class LibraryViewModel : ObservableObject
         }
 
         ScanCommand.NotifyCanExecuteChanged();
+        DetectCommand.NotifyCanExecuteChanged();
     }
 
     /// <remarks>
