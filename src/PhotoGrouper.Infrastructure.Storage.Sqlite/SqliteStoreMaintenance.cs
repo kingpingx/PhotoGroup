@@ -22,6 +22,7 @@ public sealed class SqliteStoreMaintenance(SqliteConnectionFactory connections) 
     private static readonly string[] TablesInDeletionOrder =
     [
         "face_links",
+        "ignored_faces",
         "face_embeddings",
         "photo_detections",
         "export_ops",

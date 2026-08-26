@@ -19,9 +19,22 @@ public sealed class ClusterFacesUseCase(
     IFaceRepository faces,
     IClusterRepository clusters,
     IFaceLinkRepository links,
+    IPersonRepository people,
+    IIgnoredFaceRepository ignored,
     IVectorIndex index,
     IClock clock)
 {
+    /// <summary>
+    /// How close a new group must be to an existing person to be recognised as them.
+    /// </summary>
+    /// <remarks>
+    /// Set above the threshold used to link individual faces. A group's centroid is an average of
+    /// several photographs and is therefore a cleaner signal than any single face, so demanding
+    /// more of it costs little; and the consequence of being wrong here is worse. Attaching a group
+    /// to the wrong person silently files a stranger's photographs under somebody's name, whereas
+    /// failing to attach merely leaves a group waiting to be named.
+    /// </remarks>
+    public const float PersonMatchThreshold = 0.5f;
     /// <summary>
     /// Neighbours considered per face.
     /// </summary>
@@ -65,12 +78,20 @@ public sealed class ClusterFacesUseCase(
     {
         progress.Report(new ProgressUpdate("Loading faces", 0, null));
 
+        // Dismissed faces are left out before anything else happens, rather than being filtered
+        // from the result. A stranger who still takes part in the comparison can pull genuine faces
+        // into their group and change who ends up with whom.
+        var dismissed = await ignored.GetAllAsync(ct).ConfigureAwait(false);
+
         var vectors = new List<FaceEmbedding>();
         await foreach (var embedding in embeddings
                            .StreamByEmbedderAsync(embedderId, detectorId, ct)
                            .ConfigureAwait(false))
         {
-            vectors.Add(embedding);
+            if (!dismissed.Contains(embedding.FaceId))
+            {
+                vectors.Add(embedding);
+            }
         }
 
         if (vectors.Count == 0)
@@ -107,6 +128,7 @@ public sealed class ClusterFacesUseCase(
 
         var assignments = new List<FaceClusterAssignment>(vectors.Count);
         var records = new List<ClusterRecord>();
+        var memberships = new Dictionary<ClusterId, List<int>>();
         var singletons = 0;
 
         foreach (var (_, group) in members)
@@ -130,6 +152,7 @@ public sealed class ClusterFacesUseCase(
 
             records.Add(new ClusterRecord(
                 clusterId, detectorId, embedderId, group.Count, vectors[medoid].FaceId, clock.UtcNow));
+            memberships[clusterId] = group;
 
             foreach (var position in group)
             {
@@ -137,14 +160,131 @@ public sealed class ClusterFacesUseCase(
             }
         }
 
-        // Replaced wholesale: cluster identity carries no meaning between runs, and keeping the
-        // previous set would leave every face pointing at a group that no longer describes it.
-        // Names survive because they live on people, which this does not touch.
+        // Groups are replaced wholesale, because cluster identity carries no meaning between runs
+        // and keeping the previous set would leave faces pointing at groups that no longer describe
+        // them. That alone used to lose every name: the new groups arrived unattached, so people
+        // who had been named appeared unnamed, and naming one of those groups again created a
+        // second person who took the faces, leaving the original with none. Recognising the people
+        // again, below, is what makes re-grouping safe to press twice.
         await clusters.ReplaceAllAsync(detectorId, embedderId, records, ct).ConfigureAwait(false);
         await faces.SetClustersAsync(assignments, ct).ConfigureAwait(false);
 
+        var recognised = await RecogniseKnownPeopleAsync(records, vectors, memberships, ct)
+            .ConfigureAwait(false);
+
         progress.Report(new ProgressUpdate("Grouping faces", vectors.Count, vectors.Count));
-        return new ClusteringResult(records.Count, vectors.Count - singletons, singletons);
+        return new ClusteringResult(records.Count, vectors.Count - singletons, singletons, recognised);
+    }
+
+    /// <summary>
+    /// Re-attaches new groups to people who have already been named.
+    /// </summary>
+    /// <remarks>
+    /// This is what makes grouping repeatable. Each named person carries the average of their face
+    /// vectors, so a freshly formed group can be compared against everyone already known and
+    /// recognised as one of them.
+    ///
+    /// A group's centroid is compared rather than its individual faces: averaging several
+    /// photographs cancels out the lighting and angle of any one of them, which is exactly the
+    /// noise that makes single-face matching unreliable.
+    ///
+    /// Faces the user has decided about by hand are never touched. Somebody who removed a
+    /// photograph from a person said that face is not them, and no amount of similarity is allowed
+    /// to overrule it.
+    /// </remarks>
+    private async Task<int> RecogniseKnownPeopleAsync(
+        IReadOnlyList<ClusterRecord> records,
+        IReadOnlyList<FaceEmbedding> vectors,
+        IReadOnlyDictionary<ClusterId, List<int>> memberships,
+        CancellationToken ct)
+    {
+        var known = (await people.GetAllAsync(ct).ConfigureAwait(false))
+            .Where(person => person.Centroid is { Length: > 0 })
+            .ToList();
+
+        if (known.Count == 0)
+        {
+            return 0;
+        }
+
+        var recognised = 0;
+
+        foreach (var record in records)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            if (!memberships.TryGetValue(record.Id, out var group))
+            {
+                continue;
+            }
+
+            var centroid = Centroid(vectors, group);
+            if (centroid is null)
+            {
+                continue;
+            }
+
+            var best = known
+                .Select(person => (Person: person, Similarity: Dot(centroid, person.Centroid!)))
+                .OrderByDescending(match => match.Similarity)
+                .First();
+
+            if (best.Similarity < PersonMatchThreshold)
+            {
+                continue;
+            }
+
+            await clusters.SetPersonAsync(record.Id, best.Person.Id, ct).ConfigureAwait(false);
+
+            var members = await faces.GetByClusterAsync(record.Id, ct).ConfigureAwait(false);
+            await faces.AssignAsync(
+                [.. members
+                    .Where(face => !face.IsUserDecided)
+                    .Select(face => new FaceAssignment(face.Id, best.Person.Id, Assignment.Auto))],
+                ct).ConfigureAwait(false);
+
+            recognised++;
+        }
+
+        return recognised;
+    }
+
+    /// <summary>The unit-length average of a group's vectors.</summary>
+    /// <remarks>
+    /// Scaled back to unit length so it can be compared with a person's stored centroid using the
+    /// same dot product everything else uses; an unnormalised average would score lower simply
+    /// because averaging shortens a vector.
+    /// </remarks>
+    private static float[]? Centroid(IReadOnlyList<FaceEmbedding> vectors, List<int> group)
+    {
+        if (group.Count == 0)
+        {
+            return null;
+        }
+
+        var sum = new float[vectors[group[0]].Vector.Length];
+
+        foreach (var position in group)
+        {
+            var vector = vectors[position].Vector;
+            for (var i = 0; i < sum.Length; i++)
+            {
+                sum[i] += vector[i];
+            }
+        }
+
+        var length = MathF.Sqrt(sum.Sum(v => v * v));
+        if (length <= 0)
+        {
+            return null;
+        }
+
+        for (var i = 0; i < sum.Length; i++)
+        {
+            sum[i] /= length;
+        }
+
+        return sum;
     }
 
     /// <summary>
@@ -234,4 +374,6 @@ public sealed class ClusterFacesUseCase(
 /// <param name="ClustersFormed">Groups large enough to become candidate people.</param>
 /// <param name="FacesGrouped">Faces that landed in one of those groups.</param>
 /// <param name="FacesUnsorted">Faces that matched nothing strongly enough.</param>
-public readonly record struct ClusteringResult(int ClustersFormed, int FacesGrouped, int FacesUnsorted);
+/// <param name="PeopleRecognised">Groups matched to somebody already named, needing no new name.</param>
+public readonly record struct ClusteringResult(
+    int ClustersFormed, int FacesGrouped, int FacesUnsorted, int PeopleRecognised = 0);

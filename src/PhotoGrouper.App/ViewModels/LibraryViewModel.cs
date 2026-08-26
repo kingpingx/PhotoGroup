@@ -97,6 +97,7 @@ public sealed partial class LibraryViewModel : ObservableObject
         {
             AddScanRootResult.Added => $"Added {path}. Run a scan to index it.",
             AddScanRootResult.AlreadyPresent => $"{path} is already in the library.",
+            AddScanRootResult.AlreadyCovered => $"{path} sits inside a folder that is already being scanned.",
             AddScanRootResult.NotFound => $"{path} could not be opened.",
             _ => Status,
         };

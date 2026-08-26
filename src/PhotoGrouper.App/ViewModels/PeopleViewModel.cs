@@ -25,6 +25,7 @@ public sealed partial class PeopleViewModel(
     EmbedFacesUseCase embedFaces,
     ClusterFacesUseCase clusterFaces,
     NamePersonUseCase namePerson,
+    IgnoreGroupUseCase ignoreGroup,
     ModelStore models,
     OnnxSessionFactory sessions,
     ThumbnailLoader thumbnails,
@@ -87,6 +88,10 @@ public sealed partial class PeopleViewModel(
 
     public bool HasGroups => UnnamedGroupCount > 0 || NamedPeopleCount > 0;
 
+    /// <summary>How many faces have been dismissed, so they can be brought back.</summary>
+    [ObservableProperty]
+    private int _ignoredFaceCount;
+
     public string EmbedderId => ArcFaceEmbedder.Provider.Id;
 
     /// <summary>The panel for correcting one person: rename, remove photos, or remove them.</summary>
@@ -129,6 +134,7 @@ public sealed partial class PeopleViewModel(
 
         UnnamedGroupCount = UnnamedGroups.Count;
         NamedPeopleCount = NamedPeople.Count;
+        IgnoredFaceCount = await ignoreGroup.CountAsync(ct).ConfigureAwait(true);
         OnPropertyChanged(nameof(HasGroups));
 
         if (records.Count == 0 && named.Count == 0)
@@ -208,9 +214,12 @@ public sealed partial class PeopleViewModel(
 
             Status =
                 $"Found {grouped.ClustersFormed:N0} group(s) across {grouped.FacesGrouped:N0} face(s)"
+                + (grouped.PeopleRecognised > 0
+                    ? $", {grouped.PeopleRecognised:N0} matched to people you have already named"
+                    : string.Empty)
                 + (embedded.FacesEmbedded > 0 ? $", {embedded.FacesEmbedded:N0} newly recognised" : string.Empty)
                 + (grouped.FacesUnsorted > 0 ? $", {grouped.FacesUnsorted:N0} unmatched" : string.Empty)
-                + ". Name a group to find that person everywhere.";
+                + ".";
         }
         catch (OperationCanceledException)
         {
@@ -237,6 +246,35 @@ public sealed partial class PeopleViewModel(
 
     [RelayCommand(CanExecute = nameof(IsBusy))]
     private void Cancel() => _cancellation?.Cancel();
+
+    /// <summary>Dismisses a group of faces the user does not want to name.</summary>
+    /// <remarks>
+    /// Most faces in a library belong to strangers. Without this the only way to clear a group off
+    /// the screen is to invent a name for somebody nobody cares about.
+    /// </remarks>
+    [RelayCommand]
+    private async Task IgnoreAsync(ClusterTileViewModel? tile)
+    {
+        if (tile is null)
+        {
+            return;
+        }
+
+        var dismissed = await ignoreGroup.ExecuteAsync(tile.ClusterId, CancellationToken.None)
+            .ConfigureAwait(true);
+
+        Status = $"Dismissed {dismissed:N0} face(s). They will not be grouped again.";
+        await RefreshAsync(CancellationToken.None).ConfigureAwait(true);
+    }
+
+    /// <summary>Brings every dismissed face back.</summary>
+    [RelayCommand]
+    private async Task RestoreIgnoredAsync()
+    {
+        await ignoreGroup.RestoreAllAsync(CancellationToken.None).ConfigureAwait(true);
+        Status = "Dismissed faces restored. Group faces again to see them.";
+        await RefreshAsync(CancellationToken.None).ConfigureAwait(true);
+    }
 
     /// <summary>Names a group, which is the moment the app becomes useful.</summary>
     [RelayCommand]

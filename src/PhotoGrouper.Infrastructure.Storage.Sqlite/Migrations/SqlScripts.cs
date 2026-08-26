@@ -196,4 +196,23 @@ internal static class SqlScripts
         FROM faces
         GROUP BY photo_id, detector_id;
         """;
+
+    /// <summary>
+    /// Faces the user has said they do not care about.
+    /// </summary>
+    /// <remarks>
+    /// A photo library is full of strangers: people in the background, on posters, walking past.
+    /// Left in, they form groups that sit on the People screen forever asking to be named, and
+    /// there is no answer that makes them go away.
+    ///
+    /// Recorded per face rather than per group, because groups are rebuilt from scratch on every
+    /// run and carry no identity between them. Marking a group would be forgotten the next time
+    /// grouping was pressed, and the same strangers would come straight back.
+    /// </remarks>
+    public const string V3IgnoredFaces = """
+        CREATE TABLE ignored_faces (
+            face_id     BLOB NOT NULL PRIMARY KEY REFERENCES faces (id) ON DELETE CASCADE,
+            created_utc TEXT NOT NULL
+        );
+        """;
 }

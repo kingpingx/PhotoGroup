@@ -16,6 +16,10 @@
                                 Command="{Binding GroupCommand}" />
                         <Button Content="Stop" Classes="danger" Command="{Binding CancelCommand}"
                                 IsVisible="{Binding IsBusy}" />
+                        <Button Classes="ghost" Command="{Binding RestoreIgnoredCommand}"
+                                IsVisible="{Binding IgnoredFaceCount}"
+                                Content="{Binding IgnoredFaceCount, StringFormat='Restore {0:N0} dismissed'}"
+                                ToolTip.Tip="Bring dismissed faces back into grouping" />
                     </StackPanel>
                 </StackPanel>
 
@@ -117,6 +121,15 @@
                                                 HorizontalAlignment="Stretch"
                                                 HorizontalContentAlignment="Center"
                                                 Command="{Binding $parent[ItemsControl].((vm:PeopleViewModel)DataContext).NameCommand}"
+                                                CommandParameter="{Binding}" />
+
+                                        <!-- Most faces in a library are strangers. Without this the
+                                             only way to clear a group off the screen is to invent a
+                                             name for somebody nobody cares about. -->
+                                        <Button Content="Not someone I care about" Classes="ghost"
+                                                HorizontalAlignment="Stretch"
+                                                HorizontalContentAlignment="Center" FontSize="11"
+                                                Command="{Binding $parent[ItemsControl].((vm:PeopleViewModel)DataContext).IgnoreCommand}"
                                                 CommandParameter="{Binding}" />
                                     </StackPanel>
                                 </Border>

@@ -16,6 +16,7 @@ public sealed class SchemaMigrator(SqliteConnectionFactory connections)
     [
         new(1, "initial", SqlScripts.V1Initial),
         new(2, "photo-detections", SqlScripts.V2PhotoDetections),
+        new(3, "ignored-faces", SqlScripts.V3IgnoredFaces),
     ];
 
     public int CurrentVersion { get; private set; }

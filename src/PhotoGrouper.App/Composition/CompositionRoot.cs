@@ -41,6 +41,7 @@ public static class CompositionRoot
         services.AddSingleton<IEmbeddingRepository, SqliteEmbeddingRepository>();
         services.AddSingleton<IClusterRepository, SqliteClusterRepository>();
         services.AddSingleton<IFaceLinkRepository, SqliteFaceLinkRepository>();
+        services.AddSingleton<IIgnoredFaceRepository, SqliteIgnoredFaceRepository>();
         services.AddSingleton<IStoreMaintenance, SqliteStoreMaintenance>();
         services.AddSingleton<IUnitOfWork, SqliteUnitOfWork>();
 
@@ -75,6 +76,7 @@ public static class CompositionRoot
         services.AddSingleton<NamePersonUseCase>();
         services.AddSingleton<ResetLibraryUseCase>();
         services.AddSingleton<ManagePeopleUseCase>();
+        services.AddSingleton<IgnoreGroupUseCase>();
 
         // Presentation.
         services.AddSingleton<LibraryChangedNotifier>();
