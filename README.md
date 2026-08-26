@@ -33,21 +33,34 @@ Roughly 15,300 lines across 12 projects, with 240 tests.
 ## Platforms
 
 Requires the **.NET 8 SDK**. The application code is platform-neutral; only the native imaging and
-inference libraries differ, and the build picks the right ones for the machine it runs on.
+inference libraries differ, and the build selects the right ones for the machine it runs on.
 
 | | Status | Inference |
 |---|---|---|
-| **Windows** x64 | Supported, developed on | GPU via DirectML, falling back to CPU |
-| **Linux** x64 | Supported | CPU |
-| **macOS** | Needs an OpenCV native library of your own | CPU |
+| **Windows** x64 | Supported, developed and tested on | GPU via DirectML, falling back to CPU |
+| **Linux** x64 | Configured, not yet run | CPU |
+| **macOS** arm64 and x64 | Configured, not yet run | CPU |
 
-macOS is the awkward one, and the reason is packaging rather than code. The newest published
-OpenCvSharp runtime for macOS is a 4.6 build from 2023, x64 only, with nothing for Apple Silicon.
-Everything else — Avalonia, SQLite, ImageMagick, ONNX Runtime — already runs there. Supplying an
-OpenCV native library yourself is the only missing piece.
+Three packages vary by platform and are selected by MSBuild conditions: the OpenCV native runtime,
+ImageMagick (referenced as the AnyCPU build, which carries all three platforms' libraries in one
+package), and ONNX Runtime.
 
-GPU acceleration is Windows-only because DirectML is a Direct3D 12 API. Elsewhere inference runs on
-the processor: slower, but it produces identical vectors, so grouping quality is unaffected.
+**GPU acceleration is Windows-only**, because DirectML is a Direct3D 12 API. Everywhere else
+inference runs on the processor. That is slower — see the timings below — but it produces identical
+vectors, so grouping quality is unaffected. On Linux with NVIDIA hardware, swapping the ONNX Runtime
+reference for the CUDA package would restore it.
+
+**Only the Windows build has actually been run.** The Linux and macOS references and platform guards
+are in place, and the Windows build is unaffected by them, but nothing has been started on either.
+Treat the first run there as something to verify rather than something known to work.
+
+One decision a real port still has to make: **paths are compared case-insensitively**
+(`COLLATE NOCASE` on `photos.path` and `scan_roots.path`). That is right on Windows and on a default
+macOS volume, and wrong on Linux, where `Photo.jpg` and `photo.jpg` are two different files that
+would be treated as one. Changing it is a schema migration, so it is worth settling before anything
+depends on the current behaviour.
+
+---
 
 ## Getting started
 
@@ -243,12 +256,7 @@ Honest list of what does not work yet.
 - **Paths are compared case-insensitively.** Correct on Windows and on a default macOS volume,
   wrong on Linux, where `Photo.jpg` and `photo.jpg` are two different files and would be treated as
   one. Changing it means a schema migration, so it is worth deciding before anyone relies on it.
-- **macOS needs an OpenCV native library supplied by hand**, since no current runtime package
-  exists — see Platforms above.
-- **Only the Windows build has actually been run.** The Linux package references and platform
-  guards are in place and the Windows build is unaffected by them, but nobody has started the
-  application on Linux, so treat the first attempt as something to test rather than something
-  known to work.
+- **Only the Windows build has actually been run.** Linux and macOS are configured but unverified.
 
 ---
 

@@ -8,4 +8,16 @@
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
+
+  <!-- OpenCvSharp from 4.12 onwards ships an analyzer built against a newer Roslyn than the .NET 8
+       SDK provides, which fails the build outright rather than degrading. ExcludeAssets does not
+       stop the SDK loading it, so it is removed here instead. Pinning to 4.11 was the alternative,
+       and it was rejected because no 4.11 native runtime exists for macOS. -->
+  <Target Name="DropIncompatibleAnalyzers" BeforeTargets="CoreCompile">
+    <ItemGroup>
+      <Analyzer Remove="@(Analyzer)"
+                Condition="$([System.String]::Copy('%(Analyzer.Identity)').ToLower().Contains('opencvsharp'))" />
+    </ItemGroup>
+  </Target>
+
 </Project>
