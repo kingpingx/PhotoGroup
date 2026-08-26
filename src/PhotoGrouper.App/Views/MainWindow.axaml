@@ -1,0 +1,32 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:PhotoGrouper.App.ViewModels"
+        xmlns:views="using:PhotoGrouper.App.Views"
+        x:Class="PhotoGrouper.App.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="{Binding Title}"
+        Width="1200" Height="800"
+        MinWidth="820" MinHeight="520">
+
+    <Grid ColumnDefinitions="220,*">
+
+        <!-- Left navigation. Only Library is implemented; the rest are shown disabled so
+             the intended shape of the app is visible while it is being built. -->
+        <Border Grid.Column="0" Background="{DynamicResource SystemControlBackgroundListLowBrush}">
+            <StackPanel Margin="12,16" Spacing="4">
+                <TextBlock Text="PhotoGrouper" FontSize="18" FontWeight="SemiBold" Margin="8,0,0,16" />
+                <ListBox SelectedIndex="0" Background="Transparent" BorderThickness="0">
+                    <ListBoxItem Content="Library" />
+                    <ListBoxItem Content="People" IsEnabled="False" />
+                    <ListBoxItem Content="Search" IsEnabled="False" />
+                    <ListBoxItem Content="Review" IsEnabled="False" />
+                    <ListBoxItem Content="Organize" IsEnabled="False" />
+                    <ListBoxItem Content="Settings" IsEnabled="False" />
+                </ListBox>
+            </StackPanel>
+        </Border>
+
+        <views:LibraryView Grid.Column="1" DataContext="{Binding Library}" />
+
+    </Grid>
+</Window>

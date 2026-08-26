@@ -1,0 +1,86 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:PhotoGrouper.App.ViewModels"
+             xmlns:photos="using:PhotoGrouper.Domain.Photos"
+             x:Class="PhotoGrouper.App.Views.LibraryView"
+             x:DataType="vm:LibraryViewModel">
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="16">
+
+        <!-- Toolbar -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="0,0,0,12">
+            <Button Content="Add folder…" Click="OnAddFolderClick" />
+            <Button Content="Scan" Command="{Binding ScanCommand}" />
+            <Button Content="Cancel" Command="{Binding CancelScanCommand}"
+                    IsVisible="{Binding IsScanning}" />
+            <TextBlock VerticalAlignment="Center" Margin="12,0,0,0"
+                       Text="{Binding PhotoCount, StringFormat='{}{0:N0} photos'}"
+                       Opacity="0.7" />
+        </StackPanel>
+
+        <!-- Scan roots -->
+        <ItemsControl Grid.Row="1" ItemsSource="{Binding ScanRoots}" Margin="0,0,0,12">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <WrapPanel />
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="photos:ScanRoot">
+                    <Border Background="{DynamicResource SystemControlBackgroundListLowBrush}"
+                            CornerRadius="4" Padding="8,4" Margin="0,0,6,6">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="{Binding Path}" VerticalAlignment="Center" />
+                            <Button Content="✕" Padding="4,0" FontSize="11"
+                                    Background="Transparent" BorderThickness="0"
+                                    Command="{Binding $parent[ItemsControl].((vm:LibraryViewModel)DataContext).RemoveScanRootCommand}"
+                                    CommandParameter="{Binding}" />
+                        </StackPanel>
+                    </Border>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- Photo grid.
+
+             ItemsRepeater with a UniformGridLayout virtualises its containers, so only the
+             tiles actually on screen exist as controls. A WrapPanel would realise all of
+             them, which is fine for a hundred photos and fatal for fifty thousand. -->
+        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+            <ItemsRepeater ItemsSource="{Binding Photos}">
+                <ItemsRepeater.Layout>
+                    <UniformGridLayout ItemsStretch="None"
+                                       MinItemWidth="180" MinItemHeight="180"
+                                       MinColumnSpacing="8" MinRowSpacing="8" />
+                </ItemsRepeater.Layout>
+                <ItemsRepeater.ItemTemplate>
+                    <DataTemplate x:DataType="vm:PhotoTileViewModel">
+                        <Border Width="180" Height="180" CornerRadius="4"
+                                Background="{DynamicResource SystemControlBackgroundListLowBrush}"
+                                ToolTip.Tip="{Binding Tooltip}"
+                                AttachedToVisualTree="OnTileAttached"
+                                DetachedFromVisualTree="OnTileDetached">
+                            <Grid RowDefinitions="*,Auto">
+                                <Image Grid.Row="0" Source="{Binding Thumbnail}"
+                                       Stretch="UniformToFill" Margin="4" />
+                                <TextBlock Grid.Row="1" Text="{Binding FileName}"
+                                           FontSize="11" Opacity="0.7"
+                                           TextTrimming="CharacterEllipsis"
+                                           Margin="6,0,6,6" />
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsRepeater.ItemTemplate>
+            </ItemsRepeater>
+        </ScrollViewer>
+
+        <!-- Status bar -->
+        <StackPanel Grid.Row="3" Spacing="6" Margin="0,12,0,0">
+            <ProgressBar IsVisible="{Binding IsScanning}"
+                         IsIndeterminate="{Binding IsProgressIndeterminate}"
+                         Value="{Binding ProgressFraction}" Maximum="1" Height="4" />
+            <TextBlock Text="{Binding Status}" Opacity="0.75" FontSize="12" />
+        </StackPanel>
+
+    </Grid>
+</UserControl>

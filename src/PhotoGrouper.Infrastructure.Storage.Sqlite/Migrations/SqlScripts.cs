@@ -1,0 +1,164 @@
+namespace PhotoGrouper.Infrastructure.Storage.Sqlite.Migrations;
+
+internal static class SqlScripts
+{
+    /// <summary>
+    /// The initial schema.
+    /// </summary>
+    /// <remarks>
+    /// Ids are BLOB(16) holding a UUIDv7 in RFC 9562 big-endian order, so that index
+    /// locality follows creation time. Timestamps are ISO-8601 strings in TEXT, which sort
+    /// correctly and survive inspection with a SQL browser, at the cost of some space.
+    ///
+    /// The whole designed schema is created at once rather than one table per milestone.
+    /// The shape is settled, and a single starting point is easier to reason about than a
+    /// chain of migrations that only ever ran in development.
+    ///
+    /// Path columns collate NOCASE because Windows resolves paths case-insensitively: without
+    /// it, the same file reached by two spellings would be indexed as two photos. Note that
+    /// SQLite's NOCASE folds ASCII only, so paths differing solely in the case of a non-ASCII
+    /// character are still treated as distinct.
+    /// </remarks>
+    public const string V1Initial = """
+        CREATE TABLE scan_roots (
+            id           BLOB    NOT NULL PRIMARY KEY,
+            path         TEXT    NOT NULL COLLATE NOCASE UNIQUE,
+            recursive    INTEGER NOT NULL DEFAULT 1,
+            is_implicit  INTEGER NOT NULL DEFAULT 0,
+            last_scan_utc TEXT
+        );
+
+        CREATE TABLE photos (
+            id            BLOB    NOT NULL PRIMARY KEY,
+            path          TEXT    NOT NULL COLLATE NOCASE UNIQUE,
+            file_size     INTEGER NOT NULL,
+            mtime_utc     TEXT    NOT NULL,
+            content_hash  TEXT,
+            width         INTEGER,
+            height        INTEGER,
+            orientation   INTEGER NOT NULL DEFAULT 1,
+            taken_utc     TEXT,
+            camera        TEXT,
+            state         INTEGER NOT NULL DEFAULT 0,
+            indexed_utc   TEXT,
+            error         TEXT
+        );
+
+        CREATE INDEX ix_photos_state ON photos (state);
+        CREATE INDEX ix_photos_content_hash ON photos (content_hash) WHERE content_hash IS NOT NULL;
+        CREATE INDEX ix_photos_taken ON photos (taken_utc);
+
+        CREATE TABLE persons (
+            id            BLOB NOT NULL PRIMARY KEY,
+            display_name  TEXT NOT NULL,
+            cover_face_id BLOB,
+            centroid      BLOB,
+            created_utc   TEXT NOT NULL
+        );
+
+        CREATE UNIQUE INDEX ux_persons_name ON persons (display_name COLLATE NOCASE);
+
+        CREATE TABLE clusters (
+            id             BLOB    NOT NULL PRIMARY KEY,
+            detector_id    TEXT    NOT NULL,
+            embedder_id    TEXT    NOT NULL,
+            person_id      BLOB    REFERENCES persons (id) ON DELETE SET NULL,
+            size           INTEGER NOT NULL DEFAULT 0,
+            medoid_face_id BLOB,
+            created_utc    TEXT    NOT NULL
+        );
+
+        CREATE INDEX ix_clusters_pair ON clusters (detector_id, embedder_id);
+
+        -- A face belongs to one detector's view of a photo. Both detectors' faces coexist
+        -- so that switching detectors is reversible: the old set is deactivated, not
+        -- deleted, and switching back restores the person assignments immediately.
+        CREATE TABLE faces (
+            id               BLOB    NOT NULL PRIMARY KEY,
+            photo_id         BLOB    NOT NULL REFERENCES photos (id) ON DELETE CASCADE,
+            detector_id      TEXT    NOT NULL,
+            detector_version TEXT    NOT NULL,
+            active           INTEGER NOT NULL DEFAULT 1,
+            bbox_x           REAL    NOT NULL,
+            bbox_y           REAL    NOT NULL,
+            bbox_w           REAL    NOT NULL,
+            bbox_h           REAL    NOT NULL,
+            det_score        REAL    NOT NULL,
+            landmarks        BLOB    NOT NULL,
+            blur_score       REAL,
+            face_px          INTEGER NOT NULL,
+            cluster_id       BLOB    REFERENCES clusters (id) ON DELETE SET NULL,
+            person_id        BLOB    REFERENCES persons (id) ON DELETE SET NULL,
+            assignment       INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE INDEX ix_faces_photo ON faces (photo_id, detector_id);
+        CREATE INDEX ix_faces_person ON faces (person_id) WHERE active = 1;
+        CREATE INDEX ix_faces_cluster ON faces (cluster_id);
+        CREATE INDEX ix_faces_active ON faces (detector_id, active);
+
+        -- Vectors live apart from faces: they are large, dimensionality varies by embedder,
+        -- and vectors from different embedders are not comparable, so the embedder has to
+        -- be part of the key. Keeping them out of the faces row also keeps the many UI
+        -- queries that never read a vector fast.
+        CREATE TABLE face_embeddings (
+            face_id          BLOB    NOT NULL REFERENCES faces (id) ON DELETE CASCADE,
+            embedder_id      TEXT    NOT NULL,
+            embedder_version TEXT    NOT NULL,
+            dim              INTEGER NOT NULL,
+            vector           BLOB    NOT NULL,
+            PRIMARY KEY (face_id, embedder_id)
+        );
+
+        -- Review decisions. Persisted because no algorithm can regenerate them: losing
+        -- these means the user redoes the review by hand.
+        CREATE TABLE face_links (
+            face_a      BLOB    NOT NULL REFERENCES faces (id) ON DELETE CASCADE,
+            face_b      BLOB    NOT NULL REFERENCES faces (id) ON DELETE CASCADE,
+            kind        INTEGER NOT NULL,
+            created_utc TEXT    NOT NULL,
+            PRIMARY KEY (face_a, face_b),
+            -- Enforcing the ordering makes a duplicate pair in reverse order impossible to
+            -- write, which is cheaper than de-duplicating on read forever after.
+            CHECK (face_a < face_b)
+        );
+
+        CREATE INDEX ix_face_links_b ON face_links (face_b);
+
+        CREATE TABLE export_runs (
+            id            BLOB    NOT NULL PRIMARY KEY,
+            started_utc   TEXT    NOT NULL,
+            finished_utc  TEXT,
+            output_root   TEXT    NOT NULL,
+            pattern       TEXT    NOT NULL,
+            mode          INTEGER NOT NULL,
+            source        INTEGER NOT NULL,
+            status        INTEGER NOT NULL,
+            undone_utc    TEXT
+        );
+
+        -- Doubles as the undo journal for move runs, which is why it is persisted rather
+        -- than held in memory for the duration of the run: a crash mid-move is exactly
+        -- when the record of what moved where matters most.
+        CREATE TABLE export_ops (
+            id         BLOB    NOT NULL PRIMARY KEY,
+            run_id     BLOB    NOT NULL REFERENCES export_runs (id) ON DELETE CASCADE,
+            photo_id   BLOB    NOT NULL REFERENCES photos (id) ON DELETE CASCADE,
+            person_id  BLOB    REFERENCES persons (id) ON DELETE SET NULL,
+            src_path   TEXT    NOT NULL,
+            dst_path   TEXT    NOT NULL,
+            op         INTEGER NOT NULL,
+            status     INTEGER NOT NULL,
+            bytes      INTEGER NOT NULL DEFAULT 0,
+            src_hash   TEXT,
+            error      TEXT
+        );
+
+        CREATE INDEX ix_export_ops_run ON export_ops (run_id, status);
+
+        CREATE TABLE settings (
+            key   TEXT NOT NULL PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+        """;
+}

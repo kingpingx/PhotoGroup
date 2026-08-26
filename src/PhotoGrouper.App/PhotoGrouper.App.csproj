@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.3.20" />
+    <PackageReference Include="Avalonia.Controls.ItemsRepeater" Version="11.1.5" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.20" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.20" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.20" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PhotoGrouper.Domain\PhotoGrouper.Domain.csproj" />
+    <ProjectReference Include="..\PhotoGrouper.Application\PhotoGrouper.Application.csproj" />
+    <ProjectReference Include="..\PhotoGrouper.Infrastructure.Storage.Sqlite\PhotoGrouper.Infrastructure.Storage.Sqlite.csproj" />
+    <ProjectReference Include="..\PhotoGrouper.Infrastructure.FileSystem\PhotoGrouper.Infrastructure.FileSystem.csproj" />
+  </ItemGroup>
+
+</Project>
