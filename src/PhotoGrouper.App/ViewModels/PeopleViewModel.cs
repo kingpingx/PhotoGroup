@@ -5,7 +5,9 @@ using CommunityToolkit.Mvvm.Input;
 using PhotoGrouper.App.Services;
 using PhotoGrouper.Application.Ports;
 using PhotoGrouper.Application.UseCases;
+using PhotoGrouper.Domain.Faces;
 using PhotoGrouper.Domain.Identity;
+using PhotoGrouper.Domain.People;
 using PhotoGrouper.Infrastructure.Vision;
 
 namespace PhotoGrouper.App.ViewModels;
@@ -170,9 +172,11 @@ public sealed partial class PeopleViewModel(
         var records = await clusters.GetAllAsync(DetectorId, EmbedderId, ct).ConfigureAwait(true);
         var named = await people.GetAllAsync(ct).ConfigureAwait(true);
 
-        // Built before the group tiles, because each of them offers this list.
+        // Built before the group tiles, because each of them offers this list. These carry no
+        // cover face: they exist only to fill a drop-down, and loading a crop for each would
+        // decode a photograph per named person on every refresh to show a list of names.
         var knownPeople = named
-            .Select(person => new PersonTileViewModel(person.Id, person.Name.Value, 0))
+            .Select(person => new PersonTileViewModel(person.Id, person.Name.Value, 0, thumbnails))
             .OrderBy(person => person.Name, NaturalStringComparer.Instance)
             .ToList();
 
@@ -209,8 +213,12 @@ public sealed partial class PeopleViewModel(
 
         foreach (var person in named)
         {
-            var count = (await faces.GetByPersonAsync(person.Id, DetectorId, ct).ConfigureAwait(true)).Count;
-            NamedPeople.Add(new PersonTileViewModel(person.Id, person.Name.Value, count));
+            var assigned = await faces.GetByPersonAsync(person.Id, DetectorId, ct).ConfigureAwait(true);
+
+            NamedPeople.Add(new PersonTileViewModel(person.Id, person.Name.Value, assigned.Count, thumbnails)
+            {
+                Cover = await ResolveCoverAsync(person, assigned, ct).ConfigureAwait(true),
+            });
         }
 
         ApplySort();
@@ -229,6 +237,38 @@ public sealed partial class PeopleViewModel(
         {
             Status = $"{UnnamedGroups.Count:N0} group(s) awaiting a name, {NamedPeople.Count:N0} person/people named.";
         }
+    }
+
+    /// <summary>
+    /// Picks the face to show on a person's tile, and finds the photograph it lives in.
+    /// </summary>
+    /// <remarks>
+    /// A name on its own does not answer the question the tile exists to answer. Somebody working
+    /// through a library has just named several groups in a row and needs to see, at a glance,
+    /// which face each name went to — otherwise checking a name means opening it, and correcting a
+    /// mistake means opening all of them.
+    ///
+    /// The person's chosen cover is preferred where they have one. Failing that, the largest face
+    /// they appear in: a face that fills the frame is a portrait, and a small one is somebody
+    /// caught in the background of a photograph of somebody else. Score breaks a tie, because two
+    /// faces the same size are distinguished by how sure the detector was.
+    /// </remarks>
+    private async Task<FaceCoverViewModel?> ResolveCoverAsync(
+        Person person, IReadOnlyList<Face> assigned, CancellationToken ct)
+    {
+        if (assigned.Count == 0)
+        {
+            return null;
+        }
+
+        var chosen = assigned.FirstOrDefault(face => face.Id == person.CoverFaceId)
+                     ?? assigned
+                         .OrderByDescending(face => face.Box.SmallestSide)
+                         .ThenByDescending(face => face.Box.Score)
+                         .First();
+
+        var photo = await photos.GetByIdAsync(chosen.PhotoId, ct).ConfigureAwait(true);
+        return photo is null ? null : new FaceCoverViewModel(chosen.Id, photo.Path, chosen.Box);
     }
 
     /// <summary>
@@ -437,6 +477,18 @@ public sealed partial class ClusterTileViewModel(
     [ObservableProperty]
     private Bitmap? _cover;
 
+    /// <summary>
+    /// The one face this group is about, cut out of the photograph above it.
+    /// </summary>
+    /// <remarks>
+    /// The whole photograph alone is ambiguous the moment it contains more than one person: a
+    /// group shot of three produces three tiles showing the identical picture, and nothing on any
+    /// of them says which of the three is being asked about. Shown beside the photograph rather
+    /// than instead of it, so the context the photograph carries is not lost to gain the answer.
+    /// </remarks>
+    [ObservableProperty]
+    private Bitmap? _faceCrop;
+
     [ObservableProperty]
     private string _proposedName = string.Empty;
 
@@ -481,10 +533,16 @@ public sealed partial class ClusterTileViewModel(
         }
 
         var photo = await photos.GetByIdAsync(medoid.PhotoId, CancellationToken.None).ConfigureAwait(true);
-        if (photo is not null)
+        if (photo is null)
         {
-            Cover = await thumbnails.LoadAsync(photo.Id, photo.Path, CancellationToken.None).ConfigureAwait(true);
+            return;
         }
+
+        Cover = await thumbnails.LoadAsync(photo.Id, photo.Path, CancellationToken.None).ConfigureAwait(true);
+
+        FaceCrop = await thumbnails
+            .LoadFaceAsync(medoid.Id, photo.Path, medoid.Box, CancellationToken.None)
+            .ConfigureAwait(true);
     }
 }
 
@@ -510,9 +568,60 @@ public sealed record PersonSort(string Name, Func<IEnumerable<PersonTileViewMode
     public override string ToString() => Name;
 }
 
-/// <summary>A named person and how many photographs they appear in.</summary>
-public sealed record PersonTileViewModel(PersonId Id, string Name, int PhotoCount)
+/// <summary>Where one face is, so its crop can be fetched when a tile becomes visible.</summary>
+/// <remarks>
+/// Carried as a value rather than resolved on demand because the screen has already read the face
+/// and the photograph to build the tile. Looking them up again when the tile scrolls into view
+/// would repeat two queries per person to learn something already known.
+/// </remarks>
+public sealed record FaceCoverViewModel(FaceId FaceId, string PhotoPath, FaceBox Box);
+
+/// <summary>A named person, their face, and how many photographs they appear in.</summary>
+/// <remarks>
+/// A class rather than a record because it acquires its picture after it is built, and a record's
+/// generated equality would then take the loaded bitmap into account: two tiles for the same
+/// person would compare unequal purely because one of them had finished decoding. Identity here is
+/// the person's id and nothing else, which is also what a picker needs to keep a selection across
+/// a refresh.
+/// </remarks>
+public sealed partial class PersonTileViewModel(
+    PersonId id, string name, int photoCount, ThumbnailLoader thumbnails) : ObservableObject
 {
+    public PersonId Id { get; } = id;
+
+    public string Name { get; } = name;
+
+    public int PhotoCount { get; } = photoCount;
+
+    /// <summary>Which face to show, or null for a tile that only needs to carry a name.</summary>
+    public FaceCoverViewModel? Cover { get; init; }
+
+    public bool HasCover => Cover is not null;
+
+    [ObservableProperty]
+    private Bitmap? _coverImage;
+
+    /// <remarks>
+    /// Loaded when the tile becomes visible rather than when the list is built, for the same
+    /// reason the group tiles are: a library with hundreds of named people would otherwise decode
+    /// hundreds of photographs before showing anything at all.
+    /// </remarks>
+    public async void LoadCoverAsync()
+    {
+        if (CoverImage is not null || Cover is null)
+        {
+            return;
+        }
+
+        CoverImage = await thumbnails
+            .LoadFaceAsync(Cover.FaceId, Cover.PhotoPath, Cover.Box, CancellationToken.None)
+            .ConfigureAwait(true);
+    }
+
+    public override bool Equals(object? other) => other is PersonTileViewModel person && person.Id == Id;
+
+    public override int GetHashCode() => Id.GetHashCode();
+
     public string Caption => $"{PhotoCount:N0} photo(s)";
 
     /// <summary>

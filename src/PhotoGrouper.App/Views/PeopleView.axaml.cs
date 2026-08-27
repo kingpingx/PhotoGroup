@@ -36,6 +36,18 @@ public partial class PeopleView : UserControl
     }
 
     /// <remarks>
+    /// The same deferral as the group tiles, for the same reason: a library with hundreds of named
+    /// people would decode hundreds of photographs before the screen appeared.
+    /// </remarks>
+    private void OnPersonTileAttached(object? sender, VisualTreeAttachmentEventArgs e)
+    {
+        if (sender is Control { DataContext: PersonTileViewModel person })
+        {
+            person.LoadCoverAsync();
+        }
+    }
+
+    /// <remarks>
     /// Naming is the action a user repeats most, so pressing Enter completes it. Reaching for the
     /// button every time would make working through a list of groups needlessly slow.
     /// </remarks>

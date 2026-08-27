@@ -79,15 +79,24 @@
                                 <Button Classes="ghost" Padding="0" Margin="0,0,12,12"
                                         Command="{Binding $parent[ItemsControl].((vm:PeopleViewModel)DataContext).OpenPersonCommand}"
                                         CommandParameter="{Binding}"
+                                        AttachedToVisualTree="OnPersonTileAttached"
                                         ToolTip.Tip="Open to rename, remove photos, or delete">
                                     <Border Classes="tile" Width="176" Padding="16">
-                                        <StackPanel Spacing="8">
-                                            <Border Width="38" Height="38" CornerRadius="19"
-                                                    Background="{StaticResource AccentGradient}"
-                                                    HorizontalAlignment="Left">
-                                                <TextBlock Text="{Binding Initial}" Foreground="#05080F"
-                                                           FontSize="17" FontWeight="Bold"
-                                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        <StackPanel Spacing="10">
+                                            <!-- The initial sits behind the face rather than beside
+                                                 it, so a person whose crop has not loaded yet, or
+                                                 whose photograph has gone missing, still shows
+                                                 something identifiable instead of a grey square. -->
+                                            <Border Width="144" Height="144" CornerRadius="10"
+                                                    ClipToBounds="True" HorizontalAlignment="Left"
+                                                    Background="{StaticResource AccentGradient}">
+                                                <Grid>
+                                                    <TextBlock Text="{Binding Initial}" Foreground="#05080F"
+                                                               FontSize="46" FontWeight="Bold"
+                                                               HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center" />
+                                                    <Image Source="{Binding CoverImage}" Stretch="UniformToFill" />
+                                                </Grid>
                                             </Border>
                                             <TextBlock Text="{Binding Name}" FontWeight="SemiBold"
                                                        TextTrimming="CharacterEllipsis"
@@ -117,10 +126,27 @@
                                 <Border Classes="tile" Width="212" Margin="0,0,14,14" Padding="12"
                                         AttachedToVisualTree="OnGroupAttached">
                                     <StackPanel Spacing="10">
-                                        <Border Height="158" CornerRadius="8" ClipToBounds="True"
-                                                Background="{StaticResource SurfaceDeep}">
-                                            <Image Source="{Binding Cover}" Stretch="UniformToFill" />
-                                        </Border>
+                                        <!-- The photograph for context, the cut-out face for the
+                                             answer. A group shot produces one of these tiles per
+                                             person in it, all showing the same picture; without the
+                                             inset there is nothing to say which of them is being
+                                             asked about. -->
+                                        <Grid>
+                                            <Border Height="158" CornerRadius="8" ClipToBounds="True"
+                                                    Background="{StaticResource SurfaceDeep}">
+                                                <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                                            </Border>
+                                            <Border Width="62" Height="62" CornerRadius="8"
+                                                    Margin="8" ClipToBounds="True"
+                                                    BorderThickness="2"
+                                                    BorderBrush="{StaticResource Accent}"
+                                                    Background="{StaticResource SurfaceDeep}"
+                                                    HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                                                    IsVisible="{Binding FaceCrop, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                                    ToolTip.Tip="The face this group is about">
+                                                <Image Source="{Binding FaceCrop}" Stretch="UniformToFill" />
+                                            </Border>
+                                        </Grid>
                                         <TextBlock Text="{Binding Caption}" Classes="muted" FontSize="11" />
                                         <TextBox Text="{Binding ProposedName}"
                                                  Watermark="Type a name, press Enter"
@@ -186,10 +212,22 @@
                                 <Border Classes="tile" Width="176" Margin="0,0,12,12" Padding="10"
                                         AttachedToVisualTree="OnGroupAttached">
                                     <StackPanel Spacing="8">
-                                        <Border Height="122" CornerRadius="8" ClipToBounds="True"
-                                                Background="{StaticResource SurfaceDeep}">
-                                            <Image Source="{Binding Cover}" Stretch="UniformToFill" />
-                                        </Border>
+                                        <Grid>
+                                            <Border Height="122" CornerRadius="8" ClipToBounds="True"
+                                                    Background="{StaticResource SurfaceDeep}">
+                                                <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                                            </Border>
+                                            <Border Width="52" Height="52" CornerRadius="8"
+                                                    Margin="7" ClipToBounds="True"
+                                                    BorderThickness="2"
+                                                    BorderBrush="{StaticResource Accent}"
+                                                    Background="{StaticResource SurfaceDeep}"
+                                                    HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                                                    IsVisible="{Binding FaceCrop, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                                    ToolTip.Tip="The face this group is about">
+                                                <Image Source="{Binding FaceCrop}" Stretch="UniformToFill" />
+                                            </Border>
+                                        </Grid>
                                         <TextBox Text="{Binding ProposedName}"
                                                  Watermark="Name, then Enter"
                                                  FontSize="12" KeyDown="OnNameKeyDown" />
@@ -326,6 +364,18 @@
                                     ToolTip.Tip="{Binding FileName}">
                                 <Grid>
                                     <Image Source="{Binding Thumbnail}" Stretch="UniformToFill" Margin="5" />
+
+                                    <!-- Which face of this photograph belongs to this person. The
+                                         same picture can appear twice in one person's grid, and
+                                         removing the right one is impossible without seeing them. -->
+                                    <Border Width="52" Height="52" CornerRadius="8" Margin="9"
+                                            ClipToBounds="True" BorderThickness="2"
+                                            BorderBrush="{StaticResource Accent}"
+                                            Background="{StaticResource SurfaceDeep}"
+                                            HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                                            IsVisible="{Binding FaceCrop, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                        <Image Source="{Binding FaceCrop}" Stretch="UniformToFill" />
+                                    </Border>
 
                                     <!-- Selection is a tinted overlay with a tick rather than a
                                          checkbox in a corner, so it stays legible over a

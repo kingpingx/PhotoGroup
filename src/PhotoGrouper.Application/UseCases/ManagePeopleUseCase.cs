@@ -39,7 +39,7 @@ public sealed class ManagePeopleUseCase(
             var photo = await photos.GetByIdAsync(face.PhotoId, ct).ConfigureAwait(false);
             if (photo is not null)
             {
-                results.Add(new PersonPhoto(face.Id, photo.Id, photo.Path, face.Assignment));
+                results.Add(new PersonPhoto(face.Id, photo.Id, photo.Path, face.Box, face.Assignment));
             }
         }
 
@@ -254,8 +254,14 @@ public sealed class ManagePeopleUseCase(
     }
 }
 
+/// <param name="Box">
+/// Where this face sits in the photograph. Carried so the review grid can show the face as well as
+/// the picture: a person with two faces in one photograph, or one photograph holding two people,
+/// otherwise produces tiles that are pixel-identical and impossible to tell apart.
+/// </param>
 /// <param name="Assignment">Whether this face was grouped automatically or decided by the user.</param>
-public readonly record struct PersonPhoto(FaceId FaceId, PhotoId PhotoId, string Path, Assignment Assignment);
+public readonly record struct PersonPhoto(
+    FaceId FaceId, PhotoId PhotoId, string Path, FaceBox Box, Assignment Assignment);
 
 /// <summary>A person, reduced to what a picker needs.</summary>
 public readonly record struct PersonSummary(PersonId Id, string Name)

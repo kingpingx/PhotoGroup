@@ -311,6 +311,7 @@ public sealed partial class PersonPhotoViewModel : ObservableObject
     private readonly Action _onSelectionChanged;
     private readonly PhotoId _photoId;
     private readonly string _path;
+    private readonly FaceBox _box;
 
     public PersonPhotoViewModel(PersonPhoto photo, ThumbnailLoader thumbnails, Action onSelectionChanged)
     {
@@ -318,6 +319,7 @@ public sealed partial class PersonPhotoViewModel : ObservableObject
         _onSelectionChanged = onSelectionChanged;
         _photoId = photo.PhotoId;
         _path = photo.Path;
+        _box = photo.Box;
 
         FaceId = photo.FaceId;
         FileName = System.IO.Path.GetFileName(photo.Path);
@@ -334,6 +336,17 @@ public sealed partial class PersonPhotoViewModel : ObservableObject
     [ObservableProperty]
     private Bitmap? _thumbnail;
 
+    /// <summary>
+    /// The face this tile is really about, cut out of the photograph.
+    /// </summary>
+    /// <remarks>
+    /// A person can hold two faces from one photograph — grouping occasionally decides a stranger
+    /// in the background is them — and the same picture then appears twice with nothing to say
+    /// which tile removes which face. With the crop, the wrong one is obvious and can be taken off.
+    /// </remarks>
+    [ObservableProperty]
+    private Bitmap? _faceCrop;
+
     [ObservableProperty]
     private bool _isSelected;
 
@@ -347,6 +360,13 @@ public sealed partial class PersonPhotoViewModel : ObservableObject
         {
             Thumbnail = await _thumbnails
                 .LoadAsync(_photoId, _path, CancellationToken.None)
+                .ConfigureAwait(true);
+        }
+
+        if (FaceCrop is null)
+        {
+            FaceCrop = await _thumbnails
+                .LoadFaceAsync(FaceId, _path, _box, CancellationToken.None)
                 .ConfigureAwait(true);
         }
     }
