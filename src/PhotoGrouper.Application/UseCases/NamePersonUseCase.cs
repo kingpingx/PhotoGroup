@@ -69,7 +69,17 @@ public sealed class NamePersonUseCase(
 
         await UpdateCentroidAsync(person, record.DetectorId, record.EmbedderId, ct).ConfigureAwait(false);
 
-        return NamingResult.Success(person.Id, personName, members.Count, merged);
+        // Naming somebody is a statement about who they are, not only about this one group, so the
+        // remaining groups are checked against them straight away. A person photographed in very
+        // different lighting, or across years, routinely comes out as several groups; without this
+        // the user is asked to name the same person over and over, and only a full re-grouping
+        // would join them up.
+        var absorbed = await AbsorbMatchingGroupsAsync(
+            person, clusterId, record.DetectorId, record.EmbedderId, ct).ConfigureAwait(false);
+
+        var total = members.Count + absorbed.Faces;
+
+        return NamingResult.Success(person.Id, personName, total, merged, absorbed.Groups);
     }
 
     public async Task<NamingResult> RenameAsync(PersonId personId, string name, CancellationToken ct)
@@ -96,6 +106,125 @@ public sealed class NamePersonUseCase(
         await people.UpdateAsync(person, ct).ConfigureAwait(false);
 
         return NamingResult.Success(person.Id, personName, 0, merged: false);
+    }
+
+    /// <summary>
+    /// Attaches any other unnamed group that looks like this person.
+    /// </summary>
+    /// <remarks>
+    /// Compares each remaining group's average vector against the person's, at the same bar
+    /// clustering uses when it recognises somebody already named. That bar is higher than the one
+    /// used between individual faces: an average cancels out the lighting and angle of any single
+    /// photograph, so more can be asked of it, and the cost of being wrong is worse — quietly
+    /// filing a stranger's photographs under somebody's name rather than leaving a group unnamed.
+    ///
+    /// Faces the user has decided about by hand are left alone, as everywhere else.
+    /// </remarks>
+    private async Task<(int Groups, int Faces)> AbsorbMatchingGroupsAsync(
+        Person person,
+        ClusterId justNamed,
+        string detectorId,
+        string embedderId,
+        CancellationToken ct)
+    {
+        if (person.Centroid is not { Length: > 0 } centroid)
+        {
+            return (0, 0);
+        }
+
+        var candidates = (await clusters.GetAllAsync(detectorId, embedderId, ct).ConfigureAwait(false))
+            .Where(c => c.PersonId is null && c.Id != justNamed)
+            .ToList();
+
+        if (candidates.Count == 0)
+        {
+            return (0, 0);
+        }
+
+        // Read once and indexed, rather than a query per group. A library with many unnamed groups
+        // would otherwise issue a query for every one of them each time a name was typed.
+        var vectors = new Dictionary<FaceId, float[]>();
+        await foreach (var embedding in embeddings
+                           .StreamByEmbedderAsync(embedderId, detectorId, ct)
+                           .ConfigureAwait(false))
+        {
+            vectors[embedding.FaceId] = embedding.Vector;
+        }
+
+        var groups = 0;
+        var absorbedFaces = 0;
+
+        foreach (var candidate in candidates)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var members = await faces.GetByClusterAsync(candidate.Id, ct).ConfigureAwait(false);
+            var known = members
+                .Select(face => vectors.TryGetValue(face.Id, out var v) ? v : null)
+                .Where(v => v is not null)
+                .Select(v => v!)
+                .ToList();
+
+            if (known.Count == 0 || Similarity(Average(known), centroid) < ClusterFacesUseCase.PersonMatchThreshold)
+            {
+                continue;
+            }
+
+            await clusters.SetPersonAsync(candidate.Id, person.Id, ct).ConfigureAwait(false);
+            await faces.AssignAsync(
+                [.. members
+                    .Where(face => !face.IsUserDecided)
+                    .Select(face => new FaceAssignment(face.Id, person.Id, Assignment.Auto))],
+                ct).ConfigureAwait(false);
+
+            groups++;
+            absorbedFaces += members.Count;
+        }
+
+        if (groups > 0)
+        {
+            // The person now covers more faces than the centroid was computed from, so it is
+            // recomputed rather than left describing only the first group.
+            await UpdateCentroidAsync(person, detectorId, embedderId, ct).ConfigureAwait(false);
+        }
+
+        return (groups, absorbedFaces);
+    }
+
+    /// <summary>The unit-length average of a set of vectors.</summary>
+    private static float[] Average(IReadOnlyList<float[]> vectors)
+    {
+        var sum = new float[vectors[0].Length];
+
+        foreach (var vector in vectors)
+        {
+            for (var i = 0; i < sum.Length; i++)
+            {
+                sum[i] += vector[i];
+            }
+        }
+
+        var length = MathF.Sqrt(sum.Sum(v => v * v));
+        if (length > 0)
+        {
+            for (var i = 0; i < sum.Length; i++)
+            {
+                sum[i] /= length;
+            }
+        }
+
+        return sum;
+    }
+
+    private static float Similarity(float[] a, float[] b)
+    {
+        var sum = 0f;
+        for (var i = 0; i < Math.Min(a.Length, b.Length); i++)
+        {
+            sum += a[i] * b[i];
+        }
+
+        return sum;
     }
 
     /// <summary>
@@ -154,16 +283,18 @@ public sealed class NamePersonUseCase(
 }
 
 /// <param name="Merged">True when the name already existed and this group joined that person.</param>
+/// <param name="GroupsAbsorbed">Other unnamed groups recognised as the same person and attached.</param>
 public readonly record struct NamingResult(
     bool IsSuccess,
     PersonId PersonId,
     string Name,
     int FacesAssigned,
     bool Merged,
-    string? Error)
+    string? Error,
+    int GroupsAbsorbed = 0)
 {
-    public static NamingResult Success(PersonId id, PersonName name, int faces, bool merged) =>
-        new(true, id, name.Value, faces, merged, null);
+    public static NamingResult Success(PersonId id, PersonName name, int faces, bool merged, int absorbed = 0) =>
+        new(true, id, name.Value, faces, merged, null, absorbed);
 
     public static NamingResult Invalid(string error) =>
         new(false, default, string.Empty, 0, false, error);

@@ -122,6 +122,29 @@ public sealed partial class PeopleViewModel(
 
     public string EmbedderId => ArcFaceEmbedder.Provider.Id;
 
+    /// <summary>How the named people are ordered.</summary>
+    public IReadOnlyList<PersonSort> SortOptions { get; } = PersonSort.All;
+
+    [ObservableProperty]
+    private PersonSort _selectedSort = PersonSort.All[0];
+
+    partial void OnSelectedSortChanged(PersonSort value) => ApplySort();
+
+    /// <remarks>
+    /// Sorts the existing collection in place rather than reloading. Re-reading from storage would
+    /// count every person's photographs again to answer a question about presentation.
+    /// </remarks>
+    private void ApplySort()
+    {
+        var ordered = SelectedSort.Apply(NamedPeople).ToList();
+
+        NamedPeople.Clear();
+        foreach (var person in ordered)
+        {
+            NamedPeople.Add(person);
+        }
+    }
+
     /// <summary>The panel for correcting one person: rename, remove photos, or remove them.</summary>
     public PersonDetailViewModel Detail { get; } = detail;
 
@@ -135,6 +158,7 @@ public sealed partial class PeopleViewModel(
         }
 
         Detail.DetectorId = DetectorId;
+        Detail.EmbedderId = EmbedderId;
         Detail.Changed = () => RefreshAsync(CancellationToken.None);
         await Detail.OpenAsync(person.Id, person.Name, CancellationToken.None).ConfigureAwait(true);
     }
@@ -146,14 +170,29 @@ public sealed partial class PeopleViewModel(
         var records = await clusters.GetAllAsync(DetectorId, EmbedderId, ct).ConfigureAwait(true);
         var named = await people.GetAllAsync(ct).ConfigureAwait(true);
 
+        // Built before the group tiles, because each of them offers this list.
+        var knownPeople = named
+            .Select(person => new PersonTileViewModel(person.Id, person.Name.Value, 0))
+            .OrderBy(person => person.Name, NaturalStringComparer.Instance)
+            .ToList();
+
         UnnamedGroups.Clear();
         NamedPeople.Clear();
 
         SingleAppearances.Clear();
 
-        foreach (var record in records.Where(r => r.PersonId is null))
+        // Largest groups first, so the people worth naming are reached before the long tail of
+        // one-off strangers. Storage returns them in that order already; sorting here means the
+        // screen does not depend on a query's ordering to stay sensible.
+        foreach (var record in records
+                     .Where(r => r.PersonId is null)
+                     .OrderByDescending(r => r.Size)
+                     .ThenBy(r => r.Id.Value))
         {
-            var tile = new ClusterTileViewModel(record, thumbnails, faces, photos);
+            var tile = new ClusterTileViewModel(record, thumbnails, faces, photos)
+            {
+                KnownPeople = knownPeople,
+            };
 
             if (record.Size >= ClusterFacesUseCase.MinimumClusterSize)
             {
@@ -173,6 +212,8 @@ public sealed partial class PeopleViewModel(
             var count = (await faces.GetByPersonAsync(person.Id, DetectorId, ct).ConfigureAwait(true)).Count;
             NamedPeople.Add(new PersonTileViewModel(person.Id, person.Name.Value, count));
         }
+
+        ApplySort();
 
         UnnamedGroupCount = UnnamedGroups.Count;
         NamedPeopleCount = NamedPeople.Count;
@@ -294,6 +335,35 @@ public sealed partial class PeopleViewModel(
         ? $"APPEARS ONCE — showing {SingleAppearances.Count:N0} of {SingleAppearanceCount:N0}"
         : "APPEARS ONCE";
 
+    /// <summary>
+    /// Adds a group to somebody already named, instead of naming it afresh.
+    /// </summary>
+    /// <remarks>
+    /// Routed through the same operation as naming, which already treats an existing name as a
+    /// request to merge. Writing a separate path would mean a second place that has to remember to
+    /// update the person's average vector and to leave the user's own corrections alone.
+    /// </remarks>
+    [RelayCommand]
+    private async Task AssignToExistingAsync(ClusterTileViewModel? tile)
+    {
+        if (tile?.SelectedPerson is not { } person)
+        {
+            return;
+        }
+
+        var result = await namePerson.ExecuteAsync(tile.ClusterId, person.Name, CancellationToken.None)
+            .ConfigureAwait(true);
+
+        Status = result.IsSuccess
+            ? $"Added {result.FacesAssigned:N0} photo(s) to {result.Name}."
+            : result.Error!;
+
+        if (result.IsSuccess)
+        {
+            await RefreshAsync(CancellationToken.None).ConfigureAwait(true);
+        }
+    }
+
     /// <summary>Dismisses a group of faces the user does not want to name.</summary>
     /// <remarks>
     /// Most faces in a library belong to strangers. Without this the only way to clear a group off
@@ -336,9 +406,12 @@ public sealed partial class PeopleViewModel(
             .ConfigureAwait(true);
 
         Status = result.IsSuccess
-            ? result.Merged
-                ? $"Added {result.FacesAssigned:N0} more photo(s) to {result.Name}."
-                : $"{result.Name} now has {result.FacesAssigned:N0} photo(s)."
+            ? (result.Merged
+                  ? $"Added {result.FacesAssigned:N0} more photo(s) to {result.Name}."
+                  : $"{result.Name} now has {result.FacesAssigned:N0} photo(s).")
+              + (result.GroupsAbsorbed > 0
+                  ? $" {result.GroupsAbsorbed:N0} other group(s) were recognised as the same person."
+                  : string.Empty)
             : result.Error!;
 
         if (result.IsSuccess)
@@ -369,6 +442,21 @@ public sealed partial class ClusterTileViewModel(
 
     public ClusterId ClusterId { get; } = record.Id;
 
+    /// <summary>
+    /// People already named, offered so this group can join one of them.
+    /// </summary>
+    /// <remarks>
+    /// Grouping cannot always tell that two groups are one person, and typing the name again is a
+    /// poor substitute: it depends on spelling it identically, and offers no reminder of who has
+    /// already been named. Choosing from the list removes both problems.
+    /// </remarks>
+    public IReadOnlyList<PersonTileViewModel> KnownPeople { get; init; } = [];
+
+    public bool HasKnownPeople => KnownPeople.Count > 0;
+
+    [ObservableProperty]
+    private PersonTileViewModel? _selectedPerson;
+
     public int Size { get; } = record.Size;
 
     public string Caption { get; } = $"{record.Size} photo(s)";
@@ -398,6 +486,28 @@ public sealed partial class ClusterTileViewModel(
             Cover = await thumbnails.LoadAsync(photo.Id, photo.Path, CancellationToken.None).ConfigureAwait(true);
         }
     }
+}
+
+/// <summary>
+/// An order the People screen can be shown in.
+/// </summary>
+/// <remarks>
+/// Modelled as objects rather than an enum plus a switch, so that each ordering carries its own
+/// comparison and adding one means adding an entry rather than editing a statement elsewhere.
+/// </remarks>
+public sealed record PersonSort(string Name, Func<IEnumerable<PersonTileViewModel>, IEnumerable<PersonTileViewModel>> Apply)
+{
+    public static IReadOnlyList<PersonSort> All { get; } =
+    [
+        // Most photographs first, by default. The people somebody has the most pictures of are
+        // almost always the ones they came to find.
+        new("Most photos", people => people.OrderByDescending(p => p.PhotoCount).ThenBy(p => p.Name, NaturalStringComparer.Instance)),
+        new("Fewest photos", people => people.OrderBy(p => p.PhotoCount).ThenBy(p => p.Name, NaturalStringComparer.Instance)),
+        new("Name A–Z", people => people.OrderBy(p => p.Name, NaturalStringComparer.Instance)),
+        new("Name Z–A", people => people.OrderByDescending(p => p.Name, NaturalStringComparer.Instance)),
+    ];
+
+    public override string ToString() => Name;
 }
 
 /// <summary>A named person and how many photographs they appear in.</summary>

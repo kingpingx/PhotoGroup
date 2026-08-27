@@ -59,7 +59,15 @@
 
                 <!-- Named people first: once somebody has a name, they are what the user came for. -->
                 <StackPanel Spacing="10" IsVisible="{Binding NamedPeopleCount}">
-                    <TextBlock Text="PEOPLE" Classes="label" />
+                    <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                        <TextBlock Grid.Column="0" Text="PEOPLE" Classes="label"
+                                   VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="2" Text="Sort by" Classes="muted"
+                                   VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <ComboBox Grid.Column="3" MinWidth="150"
+                                  ItemsSource="{Binding SortOptions}"
+                                  SelectedItem="{Binding SelectedSort}" />
+                    </Grid>
                     <ItemsControl ItemsSource="{Binding NamedPeople}">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
@@ -123,6 +131,29 @@
                                                 Command="{Binding $parent[ItemsControl].((vm:PeopleViewModel)DataContext).NameCommand}"
                                                 CommandParameter="{Binding}" />
 
+
+                                        <!-- Grouping cannot always tell that two groups are one
+                                             person. Choosing from the people already named avoids
+                                             retyping a name and spelling it differently. -->
+                                        <StackPanel Spacing="6" IsVisible="{Binding HasKnownPeople}">
+                                            <ComboBox ItemsSource="{Binding KnownPeople}"
+                                                      SelectedItem="{Binding SelectedPerson}"
+                                                      HorizontalAlignment="Stretch"
+                                                      PlaceholderText="or add to someone…"
+                                                      FontSize="12">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate x:DataType="vm:PersonTileViewModel">
+                                                        <TextBlock Text="{Binding Name}" />
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                            <Button Content="Add to selected person"
+                                                    HorizontalAlignment="Stretch"
+                                                    HorizontalContentAlignment="Center" FontSize="11"
+                                                    IsEnabled="{Binding SelectedPerson, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                                    Command="{Binding $parent[ItemsControl].((vm:PeopleViewModel)DataContext).AssignToExistingCommand}"
+                                                    CommandParameter="{Binding}" />
+                                        </StackPanel>
                                         <!-- Most faces in a library are strangers. Without this the
                                              only way to clear a group off the screen is to invent a
                                              name for somebody nobody cares about. -->
@@ -162,6 +193,26 @@
                                         <TextBox Text="{Binding ProposedName}"
                                                  Watermark="Name, then Enter"
                                                  FontSize="12" KeyDown="OnNameKeyDown" />
+                                        <StackPanel Spacing="6" IsVisible="{Binding HasKnownPeople}">
+                                            <ComboBox ItemsSource="{Binding KnownPeople}"
+                                                      SelectedItem="{Binding SelectedPerson}"
+                                                      HorizontalAlignment="Stretch"
+                                                      PlaceholderText="or add to someone…"
+                                                      FontSize="12">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate x:DataType="vm:PersonTileViewModel">
+                                                        <TextBlock Text="{Binding Name}" />
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                            <Button Content="Add to selected person"
+                                                    HorizontalAlignment="Stretch"
+                                                    HorizontalContentAlignment="Center" FontSize="11"
+                                                    IsEnabled="{Binding SelectedPerson, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                                    Command="{Binding $parent[ItemsControl].((vm:PeopleViewModel)DataContext).AssignToExistingCommand}"
+                                                    CommandParameter="{Binding}" />
+                                        </StackPanel>
+
                                         <Button Content="Not someone I care about" Classes="ghost"
                                                 HorizontalAlignment="Stretch"
                                                 HorizontalContentAlignment="Center" FontSize="11"
@@ -220,6 +271,21 @@
                         <Button Content="Clear selection" Command="{Binding Detail.ClearSelectionCommand}" />
                         <Button Classes="danger" Content="{Binding Detail.SelectionCaption}"
                                 Command="{Binding Detail.RemoveSelectedCommand}" />
+                    </StackPanel>
+
+                    <!-- Moving is the correction for a face grouping put on the wrong person, as
+                         opposed to one who is nobody in this library. Removing only detaches it and
+                         leaves it to be grouped again; moving says where it actually belongs. -->
+                    <StackPanel Orientation="Horizontal" Spacing="10"
+                                IsVisible="{Binding Detail.HasOtherPeople}">
+                        <TextBlock Text="MOVE TO" Classes="label" VerticalAlignment="Center" />
+                        <ComboBox ItemsSource="{Binding Detail.OtherPeople}"
+                                  SelectedItem="{Binding Detail.MoveTarget}"
+                                  PlaceholderText="another person…" MinWidth="200" />
+                        <Button Content="Move selected"
+                                Command="{Binding Detail.MoveSelectedCommand}" />
+                        <TextBlock Classes="muted" VerticalAlignment="Center"
+                                   Text="Select photos above, then choose who they really are." />
                     </StackPanel>
 
                     <StackPanel Orientation="Horizontal" Spacing="10"

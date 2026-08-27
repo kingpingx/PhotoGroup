@@ -60,6 +60,16 @@ public sealed partial class PersonDetailViewModel(
 
     public string DetectorId { get; set; } = string.Empty;
 
+    public string EmbedderId { get; set; } = string.Empty;
+
+    /// <summary>Everybody else, so selected photographs can be moved to the right person.</summary>
+    public ObservableCollection<PersonSummary> OtherPeople { get; } = [];
+
+    public bool HasOtherPeople => OtherPeople.Count > 0;
+
+    [ObservableProperty]
+    private PersonSummary? _moveTarget;
+
     public string SelectionCaption => SelectedCount == 0
         ? "Click photos to select them"
         : $"Remove {SelectedCount:N0} selected";
@@ -80,6 +90,15 @@ public sealed partial class PersonDetailViewModel(
     {
         Photos.Clear();
 
+        OtherPeople.Clear();
+        foreach (var person in await managePeople.GetOtherPeopleAsync(_personId, ct).ConfigureAwait(true))
+        {
+            OtherPeople.Add(person);
+        }
+
+        MoveTarget = null;
+        OnPropertyChanged(nameof(HasOtherPeople));
+
         var found = await managePeople.GetPhotosAsync(_personId, DetectorId, ct).ConfigureAwait(true);
         foreach (var photo in found)
         {
@@ -95,6 +114,7 @@ public sealed partial class PersonDetailViewModel(
         SelectedCount = Photos.Count(p => p.IsSelected);
         OnPropertyChanged(nameof(SelectionCaption));
         RemoveSelectedCommand.NotifyCanExecuteChanged();
+        MoveSelectedCommand.NotifyCanExecuteChanged();
     }
 
     [RelayCommand]
@@ -165,6 +185,51 @@ public sealed partial class PersonDetailViewModel(
 
     private bool CanRemoveSelected() => !IsBusy && SelectedCount > 0;
 
+    /// <summary>
+    /// Moves the selected photographs to somebody else.
+    /// </summary>
+    /// <remarks>
+    /// The correction for a face that grouping put on the wrong person, as opposed to one that is
+    /// nobody in this library. Removing would only detach it and leave it to be grouped again;
+    /// moving says where it actually belongs.
+    /// </remarks>
+    [RelayCommand(CanExecute = nameof(CanMoveSelected))]
+    private async Task MoveSelectedAsync()
+    {
+        if (MoveTarget is not { } target)
+        {
+            return;
+        }
+
+        IsBusy = true;
+
+        try
+        {
+            var selected = Photos.Where(p => p.IsSelected).Select(p => p.FaceId).ToList();
+
+            var result = await managePeople
+                .MoveFacesAsync(_personId, target.Id, selected, DetectorId, EmbedderId, CancellationToken.None)
+                .ConfigureAwait(true);
+
+            Status = result.Message;
+
+            if (result.IsSuccess)
+            {
+                await ReloadAsync(CancellationToken.None).ConfigureAwait(true);
+                await NotifyChangedAsync().ConfigureAwait(true);
+            }
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private bool CanMoveSelected() => !IsBusy && SelectedCount > 0 && MoveTarget is not null;
+
+    partial void OnMoveTargetChanged(PersonSummary? value) =>
+        MoveSelectedCommand.NotifyCanExecuteChanged();
+
     [RelayCommand]
     private void SelectAll()
     {
@@ -234,6 +299,7 @@ public sealed partial class PersonDetailViewModel(
     {
         RenameCommand.NotifyCanExecuteChanged();
         RemoveSelectedCommand.NotifyCanExecuteChanged();
+        MoveSelectedCommand.NotifyCanExecuteChanged();
         ConfirmDeleteCommand.NotifyCanExecuteChanged();
     }
 }

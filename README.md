@@ -26,7 +26,7 @@ exactly where they are.
 | M5 · Export: copy or move into per-person folders | Not started |
 | M6 · Polish, resume hardening, settings | Partly |
 
-Roughly 15,300 lines across 12 projects, with 240 tests.
+Roughly 15,700 lines across 12 projects, with 246 tests.
 
 ---
 

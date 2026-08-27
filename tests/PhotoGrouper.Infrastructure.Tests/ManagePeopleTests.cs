@@ -29,6 +29,7 @@ public sealed class ManagePeopleUseCaseTests : IDisposable
     private readonly SqliteFaceRepository _faces;
     private readonly SqlitePersonRepository _people;
     private readonly SqliteClusterRepository _clusters;
+    private readonly SqliteEmbeddingRepository _embeddings;
     private readonly ManagePeopleUseCase _subject;
 
     public ManagePeopleUseCaseTests()
@@ -37,7 +38,8 @@ public sealed class ManagePeopleUseCaseTests : IDisposable
         _faces = new SqliteFaceRepository(_database.Connections);
         _people = new SqlitePersonRepository(_database.Connections);
         _clusters = new SqliteClusterRepository(_database.Connections);
-        _subject = new ManagePeopleUseCase(_people, _faces, _clusters, _photos);
+        _embeddings = new SqliteEmbeddingRepository(_database.Connections);
+        _subject = new ManagePeopleUseCase(_people, _faces, _clusters, _embeddings, _photos);
     }
 
     private static readonly FaceLandmarks Landmarks = new(
@@ -254,6 +256,87 @@ public sealed class ManagePeopleUseCaseTests : IDisposable
         var alice = await AddPersonAsync("Alice");
 
         (await _subject.RemoveFacesAsync(alice, [], default)).IsSuccess.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Photographs_can_be_moved_to_another_person()
+    {
+        // The correction for a face grouping put on the wrong person, as distinct from one who is
+        // nobody in this library. Removing would only detach it; moving says where it belongs.
+        var alice = await AddPersonAsync("Alice");
+        var bob = await AddPersonAsync("Bob");
+        var misfiled = await AddFaceAsync(alice, @"D:\photos\1.jpg");
+        await AddFaceAsync(alice, @"D:\photos\2.jpg");
+
+        var result = await _subject.MoveFacesAsync(
+            alice, bob, [misfiled], Detector, "embedder", default);
+
+        result.IsSuccess.Should().BeTrue();
+        (await _subject.GetPhotosAsync(alice, Detector, default)).Should().ContainSingle();
+        (await _subject.GetPhotosAsync(bob, Detector, default)).Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task A_moved_photograph_is_recorded_as_confirmed()
+    {
+        // Somebody who looked at a photograph and said whose it is has made a judgement, and the
+        // next grouping run must not quietly move it back.
+        var alice = await AddPersonAsync("Alice");
+        var bob = await AddPersonAsync("Bob");
+        var moved = await AddFaceAsync(alice, @"D:\photos\1.jpg");
+
+        await _subject.MoveFacesAsync(alice, bob, [moved], Detector, "embedder", default);
+
+        var theirs = await _subject.GetPhotosAsync(bob, Detector, default);
+        theirs.Single().Assignment.Should().Be(Assignment.Confirmed);
+    }
+
+    [Fact]
+    public async Task Several_photographs_move_together()
+    {
+        var alice = await AddPersonAsync("Alice");
+        var bob = await AddPersonAsync("Bob");
+        var first = await AddFaceAsync(alice, @"D:\photos\1.jpg");
+        var second = await AddFaceAsync(alice, @"D:\photos\2.jpg");
+        await AddFaceAsync(alice, @"D:\photos\3.jpg");
+
+        await _subject.MoveFacesAsync(alice, bob, [first, second], Detector, "embedder", default);
+
+        (await _subject.GetPhotosAsync(bob, Detector, default)).Should().HaveCount(2);
+        (await _subject.GetPhotosAsync(alice, Detector, default)).Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Moving_to_the_same_person_is_refused()
+    {
+        var alice = await AddPersonAsync("Alice");
+        var face = await AddFaceAsync(alice, @"D:\photos\1.jpg");
+
+        (await _subject.MoveFacesAsync(alice, alice, [face], Detector, "embedder", default))
+            .IsSuccess.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Moving_nothing_is_refused()
+    {
+        var alice = await AddPersonAsync("Alice");
+        var bob = await AddPersonAsync("Bob");
+
+        (await _subject.MoveFacesAsync(alice, bob, [], Detector, "embedder", default))
+            .IsSuccess.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task The_person_being_looked_at_is_not_offered_as_a_destination()
+    {
+        var alice = await AddPersonAsync("Alice");
+        await AddPersonAsync("Bob");
+        await AddPersonAsync("Carol");
+
+        var others = await _subject.GetOtherPeopleAsync(alice, default);
+
+        others.Should().HaveCount(2);
+        others.Should().NotContain(p => p.Id == alice);
     }
 
     [Fact]
