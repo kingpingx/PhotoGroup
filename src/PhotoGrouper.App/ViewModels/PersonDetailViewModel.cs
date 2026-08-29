@@ -20,6 +20,7 @@ namespace PhotoGrouper.App.ViewModels;
 /// </remarks>
 public sealed partial class PersonDetailViewModel(
     ManagePeopleUseCase managePeople,
+    FindDuplicateFacesUseCase findDuplicateFaces,
     ThumbnailLoader thumbnails) : ObservableObject
 {
     private PersonId _personId;
@@ -74,6 +75,15 @@ public sealed partial class PersonDetailViewModel(
         ? "Click photos to select them"
         : $"Remove {SelectedCount:N0} selected";
 
+    /// <summary>What the last search for near-identical faces found.</summary>
+    [ObservableProperty]
+    private string _duplicateSummary = string.Empty;
+
+    public bool HasDuplicateSummary => !string.IsNullOrEmpty(DuplicateSummary);
+
+    partial void OnDuplicateSummaryChanged(string value) =>
+        OnPropertyChanged(nameof(HasDuplicateSummary));
+
     public async Task OpenAsync(PersonId personId, string name, CancellationToken ct)
     {
         _personId = personId;
@@ -89,6 +99,11 @@ public sealed partial class PersonDetailViewModel(
     private async Task ReloadAsync(CancellationToken ct)
     {
         Photos.Clear();
+
+        // Marks describe the tiles that were on screen, and the tiles are about to be rebuilt.
+        // Leaving the summary behind would have it describing a set of photographs that no longer
+        // exists, which is worst immediately after a removal, when it is most likely to be read.
+        DuplicateSummary = string.Empty;
 
         OtherPeople.Clear();
         foreach (var person in await managePeople.GetOtherPeopleAsync(_personId, ct).ConfigureAwait(true))
@@ -166,7 +181,7 @@ public sealed partial class PersonDetailViewModel(
             var selected = Photos.Where(p => p.IsSelected).Select(p => p.FaceId).ToList();
 
             var result = await managePeople
-                .RemoveFacesAsync(_personId, selected, CancellationToken.None)
+                .RemoveFacesAsync(_personId, selected, DetectorId, EmbedderId, CancellationToken.None)
                 .ConfigureAwait(true);
 
             Status = result.Message;
@@ -184,6 +199,82 @@ public sealed partial class PersonDetailViewModel(
     }
 
     private bool CanRemoveSelected() => !IsBusy && SelectedCount > 0;
+
+    /// <summary>
+    /// Marks the faces of this person that are the same moment, and selects the extras.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not a separate screen. Everything needed to answer this is already on the one
+    /// the user is looking at — every photograph, its face crop, a selection, and a button to remove
+    /// what is selected — so the search annotates those tiles rather than opening a second grid of
+    /// the same pictures and a second way to remove them.
+    ///
+    /// It selects rather than removes. The set is a suggestion, the tiles show which photographs it
+    /// covers, and the existing remove button is what acts on it.
+    /// </remarks>
+    [RelayCommand(CanExecute = nameof(IsNotBusy))]
+    private async Task FindDuplicatesAsync()
+    {
+        IsBusy = true;
+
+        try
+        {
+            var sets = await findDuplicateFaces
+                .ExecuteAsync(
+                    _personId,
+                    DetectorId,
+                    EmbedderId,
+                    FindDuplicateFacesUseCase.DefaultMinimumSimilarity,
+                    CancellationToken.None)
+                .ConfigureAwait(true);
+
+            foreach (var photo in Photos)
+            {
+                photo.ClearDuplicateMark();
+            }
+
+            var byFace = Photos.ToDictionary(photo => photo.FaceId);
+            var setNumber = 0;
+            var extras = 0;
+
+            foreach (var set in sets)
+            {
+                setNumber++;
+
+                foreach (var member in set.Members)
+                {
+                    if (!byFace.TryGetValue(member.FaceId, out var tile))
+                    {
+                        continue;
+                    }
+
+                    var isKeeper = member.FaceId == set.Keeper.FaceId;
+                    tile.MarkDuplicate(setNumber, isKeeper, member.Similarity);
+
+                    // Everything but the one worth keeping arrives selected, because that is what
+                    // asking for duplicates means. Nothing is removed until the button is pressed.
+                    tile.SetSelected(!isKeeper);
+
+                    if (!isKeeper)
+                    {
+                        extras++;
+                    }
+                }
+            }
+
+            OnSelectionChanged();
+
+            DuplicateSummary = sets.Count == 0
+                ? "No near-identical faces."
+                : $"{sets.Count:N0} set(s) of near-identical faces, {extras:N0} extra selected.";
+
+            Status = DuplicateSummary;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
 
     /// <summary>
     /// Moves the selected photographs to somebody else.
@@ -297,6 +388,7 @@ public sealed partial class PersonDetailViewModel(
 
     partial void OnIsBusyChanged(bool value)
     {
+        FindDuplicatesCommand.NotifyCanExecuteChanged();
         RenameCommand.NotifyCanExecuteChanged();
         RemoveSelectedCommand.NotifyCanExecuteChanged();
         MoveSelectedCommand.NotifyCanExecuteChanged();
@@ -350,7 +442,69 @@ public sealed partial class PersonPhotoViewModel : ObservableObject
     [ObservableProperty]
     private bool _isSelected;
 
-    partial void OnIsSelectedChanged(bool value) => _onSelectionChanged();
+    partial void OnIsSelectedChanged(bool value)
+    {
+        if (!_isBulkChanging)
+        {
+            _onSelectionChanged();
+        }
+    }
+
+    private bool _isBulkChanging;
+
+    /// <summary>
+    /// Sets the flag without announcing it, for the search that sets many at once.
+    /// </summary>
+    /// <remarks>
+    /// Each announcement re-counts every tile, so letting a search over a hundred photographs
+    /// announce per tile costs the square of their number. The caller announces once at the end.
+    /// </remarks>
+    public void SetSelected(bool selected)
+    {
+        _isBulkChanging = true;
+        try
+        {
+            IsSelected = selected;
+        }
+        finally
+        {
+            _isBulkChanging = false;
+        }
+    }
+
+    /// <summary>Which set of near-identical faces this tile belongs to, if any.</summary>
+    [ObservableProperty]
+    private string _duplicateBadge = string.Empty;
+
+    public bool IsInDuplicateSet => !string.IsNullOrEmpty(DuplicateBadge);
+
+    partial void OnDuplicateBadgeChanged(string value) =>
+        OnPropertyChanged(nameof(IsInDuplicateSet));
+
+    /// <summary>True when this is the one of its set suggested for keeping.</summary>
+    [ObservableProperty]
+    private bool _isDuplicateKeeper;
+
+    /// <summary>How alike this face is to the nearest other in its set.</summary>
+    [ObservableProperty]
+    private string _matchCaption = string.Empty;
+
+    public void MarkDuplicate(int setNumber, bool isKeeper, float similarity)
+    {
+        DuplicateBadge = $"SET {setNumber}";
+        IsDuplicateKeeper = isKeeper;
+
+        // A percentage, because what the user is being asked is how much to trust this. A cosine
+        // similarity on a tile would mean nothing to anybody.
+        MatchCaption = $"{similarity:P0} alike";
+    }
+
+    public void ClearDuplicateMark()
+    {
+        DuplicateBadge = string.Empty;
+        IsDuplicateKeeper = false;
+        MatchCaption = string.Empty;
+    }
 
     public void Toggle() => IsSelected = !IsSelected;
 

@@ -42,6 +42,7 @@ public static class CompositionRoot
         services.AddSingleton<IClusterRepository, SqliteClusterRepository>();
         services.AddSingleton<IFaceLinkRepository, SqliteFaceLinkRepository>();
         services.AddSingleton<IIgnoredFaceRepository, SqliteIgnoredFaceRepository>();
+        services.AddSingleton<IPhotoSignatureRepository, SqlitePhotoSignatureRepository>();
         services.AddSingleton<IStoreMaintenance, SqliteStoreMaintenance>();
         services.AddSingleton<IUnitOfWork, SqliteUnitOfWork>();
 
@@ -74,6 +75,13 @@ public static class CompositionRoot
         services.AddSingleton<EmbedFacesUseCase>();
         services.AddSingleton<ClusterFacesUseCase>();
         services.AddSingleton<NamePersonUseCase>();
+        services.AddSingleton<AutoNameGroupsUseCase>();
+        services.AddSingleton<IndexPhotoSignaturesUseCase>();
+        services.AddSingleton<FindDuplicatePhotosUseCase>();
+        services.AddSingleton<QuarantineDuplicatesUseCase>();
+        services.AddSingleton<FindDuplicatePeopleUseCase>();
+        services.AddSingleton<FindDuplicateFacesUseCase>();
+        services.AddSingleton<MergePeopleUseCase>();
         services.AddSingleton<ResetLibraryUseCase>();
         services.AddSingleton<ManagePeopleUseCase>();
         services.AddSingleton<IgnoreGroupUseCase>();
@@ -82,6 +90,8 @@ public static class CompositionRoot
         services.AddSingleton<LibraryChangedNotifier>();
         services.AddSingleton<ThumbnailLoader>();
         services.AddSingleton<FaceOverlayViewModel>();
+        services.AddSingleton<DuplicatesViewModel>();
+        services.AddSingleton<DuplicatePeopleViewModel>();
         services.AddSingleton<LibraryViewModel>();
         services.AddSingleton<PersonDetailViewModel>();
         services.AddSingleton<PeopleViewModel>();

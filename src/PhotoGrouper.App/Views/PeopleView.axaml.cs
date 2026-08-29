@@ -48,6 +48,19 @@ public partial class PeopleView : UserControl
     }
 
     /// <remarks>
+    /// The face is loaded when the tile appears, like every other face on this screen. Here it
+    /// matters more than elsewhere: the decision being asked for is whether two faces are one
+    /// person, and a tile showing only a name cannot be answered at all.
+    /// </remarks>
+    private void OnDuplicatePersonAttached(object? sender, VisualTreeAttachmentEventArgs e)
+    {
+        if (sender is Control { DataContext: DuplicatePersonViewModel person })
+        {
+            person.LoadFaceAsync();
+        }
+    }
+
+    /// <remarks>
     /// Naming is the action a user repeats most, so pressing Enter completes it. Reaching for the
     /// button every time would make working through a list of groups needlessly slow.
     /// </remarks>

@@ -230,9 +230,18 @@ public sealed class ManagePeopleUseCase(
     /// from one never grouped, so the next grouping would put it straight back and the correction
     /// would have to be made again after every run. A rejection is a decision the automatic pass
     /// is not permitted to overrule.
+    ///
+    /// The average is recomputed afterwards, which it was not until this took a detector and an
+    /// embedder to do it with. Without that, taking photographs off somebody left them carrying an
+    /// average of faces they no longer had, and that average is what the next grouping run compares
+    /// new faces against — so the removal quietly went on describing them.
     /// </remarks>
     public async Task<PersonActionResult> RemoveFacesAsync(
-        PersonId personId, IReadOnlyList<FaceId> faceIds, CancellationToken ct)
+        PersonId personId,
+        IReadOnlyList<FaceId> faceIds,
+        string detectorId,
+        string embedderId,
+        CancellationToken ct)
     {
         if (faceIds.Count == 0)
         {
@@ -248,6 +257,8 @@ public sealed class ManagePeopleUseCase(
         await faces.AssignAsync(
             [.. faceIds.Select(id => new FaceAssignment(id, null, Assignment.Rejected))],
             ct).ConfigureAwait(false);
+
+        await UpdateCentroidAsync(person, detectorId, embedderId, ct).ConfigureAwait(false);
 
         return PersonActionResult.Succeeded(
             $"Removed {faceIds.Count:N0} photo(s) from {person.Name}. They will not be added back automatically.");

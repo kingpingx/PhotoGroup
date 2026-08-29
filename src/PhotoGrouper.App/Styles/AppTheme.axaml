@@ -119,6 +119,28 @@
         <Setter Property="Opacity" Value="0.88" />
     </Style>
 
+    <!-- A two-state switch that reads as part of this application.
+         Left to the default, the checked state paints itself in the system accent colour, which is
+         whatever the user chose in Windows personalisation. On a machine set to red that reads as a
+         warning rather than as a selection. Scoped to a class rather than to every ToggleButton, so
+         nothing a control template builds out of one is restyled by accident. -->
+    <Style Selector="ToggleButton.chip">
+        <Setter Property="CornerRadius" Value="6" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="BorderBrush" Value="{StaticResource BorderSubtle}" />
+    </Style>
+
+    <Style Selector="ToggleButton.chip:checked /template/ ContentPresenter">
+        <Setter Property="Background" Value="{StaticResource AccentGradient}" />
+        <Setter Property="TextElement.Foreground" Value="#05080F" />
+    </Style>
+
+    <Style Selector="ToggleButton.chip:checked:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="{StaticResource AccentGradient}" />
+        <Setter Property="TextElement.Foreground" Value="#05080F" />
+        <Setter Property="Opacity" Value="0.88" />
+    </Style>
+
     <Style Selector="Button.danger">
         <Setter Property="BorderBrush" Value="{StaticResource Danger}" />
         <Setter Property="Foreground" Value="{StaticResource Danger}" />

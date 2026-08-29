@@ -51,6 +51,18 @@
                         </StackPanel>
                     </StackPanel>
 
+                    <StackPanel Grid.Column="5" Spacing="6" Margin="34,0,0,0"
+                                VerticalAlignment="Bottom" HorizontalAlignment="Left">
+                        <!-- Not a fourth step. Scanning and detecting have to happen in order and
+                             on a first run; this is maintenance, done when a library has grown
+                             untidy rather than as part of setting one up. -->
+                        <TextBlock Text="TIDY UP" Classes="label" />
+                        <Button Content="Find duplicates"
+                                Command="{Binding Duplicates.OpenCommand}"
+                                IsEnabled="{Binding PhotoCount}"
+                                ToolTip.Tip="Find photos that are the same picture, such as a burst of camera shots" />
+                    </StackPanel>
+
                     <StackPanel Grid.Column="6" Orientation="Horizontal" Spacing="20"
                                 VerticalAlignment="Center">
                         <StackPanel>
@@ -211,6 +223,163 @@
                     <TextBlock Foreground="#FF66FF" Text="● mouth left" FontSize="11" VerticalAlignment="Center" />
                     <TextBlock Foreground="#FFAA66" Text="● mouth right" FontSize="11" VerticalAlignment="Center" />
                 </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- The one screen here that touches the user's own files, so it is built to be argued
+             with: every member of a set is shown, the suggested keeper is only a preselection, and
+             nothing moves until a folder has been chosen for it. -->
+        <Border IsVisible="{Binding Duplicates.IsOpen}" Background="#F2050810">
+            <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="32,26">
+
+                <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,16">
+                    <Button Grid.Column="0" Content="← Back" VerticalAlignment="Center"
+                            Margin="0,0,16,0" Command="{Binding Duplicates.CloseCommand}" />
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="DUPLICATE PHOTOS" Classes="heading" />
+                        <TextBlock Classes="muted"
+                                   Text="Sets of photos that are the same picture. The first in each set is the sharpest, and is kept." />
+                    </StackPanel>
+                </Grid>
+
+                <Border Grid.Row="1" Classes="card" Padding="16" Margin="0,0,0,14">
+                    <StackPanel Spacing="12">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Button Content="Find duplicates" Classes="primary"
+                                    Command="{Binding Duplicates.FindCommand}" />
+                            <Button Content="Stop" Classes="danger"
+                                    Command="{Binding Duplicates.CancelCommand}"
+                                    IsVisible="{Binding Duplicates.IsBusy}" />
+                            <Border Width="1" Background="{StaticResource BorderSubtle}" Margin="6,2" />
+                            <Button Content="Select every extra"
+                                    Command="{Binding Duplicates.SelectAllExtrasCommand}" />
+                            <Button Content="Clear selection"
+                                    Command="{Binding Duplicates.ClearSelectionCommand}" />
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <TextBlock Text="MOVE TO" Classes="label" VerticalAlignment="Center" />
+                            <Button Content="Choose folder…" Click="OnChooseQuarantineFolderClick" />
+                            <TextBlock Classes="muted" VerticalAlignment="Center"
+                                       MaxWidth="420" TextTrimming="CharacterEllipsis"
+                                       IsVisible="{Binding Duplicates.HasQuarantineFolder}"
+                                       Text="{Binding Duplicates.QuarantineFolder}" />
+                            <TextBlock Classes="muted" VerticalAlignment="Center"
+                                       IsVisible="{Binding !Duplicates.HasQuarantineFolder}"
+                                       Text="Choose where the extras should go. They are moved, never deleted." />
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Button Classes="primary"
+                                    Content="{Binding Duplicates.SelectionCaption}"
+                                    Command="{Binding Duplicates.MoveSelectedCommand}" />
+                            <TextBlock Classes="muted" VerticalAlignment="Center"
+                                       Text="The files are moved into that folder and dropped from the library. Delete them yourself once you are happy." />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Row="2" Classes="card" Padding="40"
+                        IsVisible="{Binding !Duplicates.Groups.Count}"
+                        VerticalAlignment="Center" HorizontalAlignment="Center">
+                    <StackPanel Spacing="10" HorizontalAlignment="Center">
+                        <TextBlock Text="⧉" FontSize="34" HorizontalAlignment="Center"
+                                   Foreground="{StaticResource Accent}" />
+                        <TextBlock Classes="muted" HorizontalAlignment="Center" MaxWidth="400"
+                                   TextWrapping="Wrap" TextAlignment="Center"
+                                   Text="{Binding Duplicates.EmptyCaption}" />
+                    </StackPanel>
+                </Border>
+
+                <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto"
+                              IsVisible="{Binding Duplicates.Groups.Count}">
+                    <ItemsControl ItemsSource="{Binding Duplicates.Groups}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:DuplicateGroupViewModel">
+                                <Border Classes="card" Padding="14" Margin="0,0,0,12">
+                                    <StackPanel Spacing="10">
+                                        <TextBlock Text="{Binding Caption}" Classes="label" />
+                                        <ItemsControl ItemsSource="{Binding Members}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <WrapPanel />
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:DuplicatePhotoViewModel">
+                                                    <Border Classes="tile" Width="198" Padding="10"
+                                                            Margin="0,0,12,0" Cursor="Hand"
+                                                            AttachedToVisualTree="OnDuplicateAttached"
+                                                            PointerPressed="OnDuplicatePressed"
+                                                            ToolTip.Tip="{Binding FullPath}">
+                                                        <StackPanel Spacing="8">
+                                                            <Grid>
+                                                                <Border Height="150" CornerRadius="8"
+                                                                        ClipToBounds="True"
+                                                                        Background="{StaticResource SurfaceDeep}">
+                                                                    <Image Source="{Binding Thumbnail}"
+                                                                           Stretch="UniformToFill" />
+                                                                </Border>
+
+                                                                <!-- Selected means "this one moves",
+                                                                     which is the opposite of what a
+                                                                     tick usually means on a grid of
+                                                                     photos, so it is coloured as a
+                                                                     warning rather than as a tick. -->
+                                                                <Border IsVisible="{Binding IsSelected}"
+                                                                        Background="#59FF5C7A"
+                                                                        BorderThickness="2" CornerRadius="9"
+                                                                        BorderBrush="{StaticResource Danger}" />
+                                                                <Border IsVisible="{Binding IsKeeper}"
+                                                                        VerticalAlignment="Top"
+                                                                        HorizontalAlignment="Left"
+                                                                        Margin="6" Padding="7,2"
+                                                                        CornerRadius="4"
+                                                                        Background="{StaticResource AccentGradient}">
+                                                                    <TextBlock Text="KEEP" FontSize="10"
+                                                                               FontWeight="Bold"
+                                                                               Foreground="#05080F" />
+                                                                </Border>
+                                                                <TextBlock Text="MOVE" IsVisible="{Binding IsSelected}"
+                                                                           VerticalAlignment="Top"
+                                                                           HorizontalAlignment="Right"
+                                                                           Margin="6" FontSize="10"
+                                                                           FontWeight="Bold"
+                                                                           Foreground="{StaticResource Danger}" />
+                                                            </Grid>
+                                                            <TextBlock Text="{Binding FileName}"
+                                                                       FontSize="11" FontWeight="SemiBold"
+                                                                       TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock Text="{Binding Dimensions}"
+                                                                       Classes="muted" FontSize="10" />
+                                                            <TextBlock Text="{Binding Size}"
+                                                                       Classes="muted" FontSize="10" />
+                                                            <TextBlock Text="{Binding Taken}"
+                                                                       Classes="muted" FontSize="10" />
+                                                            <TextBlock Text="{Binding Detail}"
+                                                                       Classes="muted" FontSize="10"
+                                                                       TextWrapping="Wrap" />
+                                                        </StackPanel>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <Border Grid.Row="3" Classes="card" Padding="16,12" Margin="0,14,0,0">
+                    <StackPanel Spacing="8">
+                        <ProgressBar IsVisible="{Binding Duplicates.IsBusy}"
+                                     IsIndeterminate="{Binding Duplicates.IsProgressIndeterminate}"
+                                     Value="{Binding Duplicates.ProgressFraction}" Maximum="1" />
+                        <TextBlock Text="{Binding Duplicates.Status}" Classes="muted"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
             </Grid>
         </Border>
     </Grid>

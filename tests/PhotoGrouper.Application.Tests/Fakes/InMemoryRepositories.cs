@@ -116,6 +116,16 @@ public sealed class InMemoryPhotoRepository : IPhotoReader, IPhotoWriter
 
         return Task.CompletedTask;
     }
+
+    public Task RemoveAsync(PhotoId id, CancellationToken ct)
+    {
+        if (_byPath.Values.FirstOrDefault(p => p.Id == id) is { } photo)
+        {
+            _byPath.Remove(photo.Path);
+        }
+
+        return Task.CompletedTask;
+    }
 }
 
 /// <summary>In-memory scan roots.</summary>

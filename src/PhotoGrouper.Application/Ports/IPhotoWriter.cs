@@ -30,6 +30,19 @@ public interface IPhotoWriter
     Task UpdatePathAsync(PhotoId id, string newPath, CancellationToken ct);
 
     /// <summary>
+    /// Drops a photograph from the index entirely.
+    /// </summary>
+    /// <remarks>
+    /// For a file that has left the library, not for one the user is finished with. Its faces go
+    /// with it, because a face is a region of a photograph that is no longer here; leaving them
+    /// would put a person's tile on a picture nothing can open.
+    ///
+    /// This is the only operation that discards detection work irreversibly, which is why it is
+    /// named plainly rather than hidden inside a tidy-up.
+    /// </remarks>
+    Task RemoveAsync(PhotoId id, CancellationToken ct);
+
+    /// <summary>
     /// Records what decoding revealed about the image.
     /// </summary>
     /// <remarks>

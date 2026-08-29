@@ -27,11 +27,13 @@ public sealed partial class PeopleViewModel(
     EmbedFacesUseCase embedFaces,
     ClusterFacesUseCase clusterFaces,
     NamePersonUseCase namePerson,
+    AutoNameGroupsUseCase autoName,
     IgnoreGroupUseCase ignoreGroup,
     ModelStore models,
     OnnxSessionFactory sessions,
     ThumbnailLoader thumbnails,
     LibraryChangedNotifier libraryChanged,
+    DuplicatePeopleViewModel duplicatePeople,
     PersonDetailViewModel detail) : ObservableObject
 {
     private CancellationTokenSource? _cancellation;
@@ -54,6 +56,10 @@ public sealed partial class PeopleViewModel(
 
         _subscribed = true;
         Detail.DetectorId = DetectorId;
+
+        DuplicatePeople.DetectorId = DetectorId;
+        DuplicatePeople.EmbedderId = EmbedderId;
+        DuplicatePeople.Changed = () => RefreshAsync(CancellationToken.None);
         libraryChanged.Subscribe(() =>
         {
             Detail.CloseCommand.Execute(null);
@@ -106,6 +112,24 @@ public sealed partial class PeopleViewModel(
     [ObservableProperty]
     private int _unnamedGroupCount;
 
+    /// <summary>
+    /// Every face this detector found, and how those faces are split.
+    /// </summary>
+    /// <remarks>
+    /// The people and group counts describe the work; this describes the material it is made of,
+    /// and the two diverge in ways worth seeing. Twelve people can hold eighteen faces or forty,
+    /// and a library that says nothing is left to name while faces sit unaccounted for is a
+    /// library where something has gone quietly wrong.
+    /// </remarks>
+    [ObservableProperty]
+    private int _faceCount;
+
+    [ObservableProperty]
+    private int _namedFaceCount;
+
+    [ObservableProperty]
+    private int _unnamedFaceCount;
+
     [ObservableProperty]
     private int _namedPeopleCount;
 
@@ -123,6 +147,30 @@ public sealed partial class PeopleViewModel(
     private int _hiddenSingleAppearanceCount;
 
     public string EmbedderId => ArcFaceEmbedder.Provider.Id;
+
+    /// <summary>
+    /// Shows the named people as rows rather than tiles.
+    /// </summary>
+    /// <remarks>
+    /// The tiles answer "who is this", which is what somebody working through a fresh library
+    /// needs. Once a library is largely named the question changes to "who do I have, and how
+    /// much of each", and a grid of large pictures is a poor way to read thirty names and their
+    /// counts. The rows carry the same face, small, so the table does not lose what the tiles are
+    /// for.
+    /// </remarks>
+    [ObservableProperty]
+    private bool _isTableView;
+
+    /// <summary>
+    /// The stem used when naming groups without being asked for a name.
+    /// </summary>
+    /// <remarks>
+    /// Editable because the right stem depends on the library. Someone sorting a family album
+    /// wants "Cousin", someone triaging a shoot wants "Guest", and the default suits neither
+    /// better than the other.
+    /// </remarks>
+    [ObservableProperty]
+    private string _defaultNamePrefix = "Person";
 
     /// <summary>How the named people are ordered.</summary>
     public IReadOnlyList<PersonSort> SortOptions { get; } = PersonSort.All;
@@ -150,6 +198,15 @@ public sealed partial class PeopleViewModel(
     /// <summary>The panel for correcting one person: rename, remove photos, or remove them.</summary>
     public PersonDetailViewModel Detail { get; } = detail;
 
+    /// <summary>
+    /// The panel for names that turn out to be the same person.
+    /// </summary>
+    /// <remarks>
+    /// Told which detector and embedder to work with on first use rather than in the constructor,
+    /// because those are properties of this screen rather than of the container that built it.
+    /// </remarks>
+    public DuplicatePeopleViewModel DuplicatePeople { get; } = duplicatePeople;
+
     /// <summary>Opens a named person for review and correction.</summary>
     [RelayCommand]
     private async Task OpenPersonAsync(PersonTileViewModel? person)
@@ -176,7 +233,7 @@ public sealed partial class PeopleViewModel(
         // cover face: they exist only to fill a drop-down, and loading a crop for each would
         // decode a photograph per named person on every refresh to show a list of names.
         var knownPeople = named
-            .Select(person => new PersonTileViewModel(person.Id, person.Name.Value, 0, thumbnails))
+            .Select(person => new PersonTileViewModel(person.Id, person.Name.Value, 0, 0, thumbnails))
             .OrderBy(person => person.Name, NaturalStringComparer.Instance)
             .ToList();
 
@@ -211,11 +268,28 @@ public sealed partial class PeopleViewModel(
         SingleAppearanceCount = records.Count(r => r.PersonId is null && r.Size < ClusterFacesUseCase.MinimumClusterSize);
         HiddenSingleAppearanceCount = Math.Max(0, SingleAppearanceCount - SingleAppearances.Count);
 
+        // Summed over every unnamed group, not over the tiles. The one-off groups are capped for
+        // display, so counting what is on screen would under-report the work left on exactly the
+        // libraries where the number matters most.
+        UnnamedFaceCount = records.Where(r => r.PersonId is null).Sum(r => r.Size);
+
+        var namedFaces = 0;
+
         foreach (var person in named)
         {
             var assigned = await faces.GetByPersonAsync(person.Id, DetectorId, ct).ConfigureAwait(true);
+            namedFaces += assigned.Count;
 
-            NamedPeople.Add(new PersonTileViewModel(person.Id, person.Name.Value, assigned.Count, thumbnails)
+            // Faces and photographs are counted separately because they genuinely differ: two
+            // people in one picture give that photograph two faces, and a person the grouping has
+            // wrongly credited with a bystander can hold two faces from a single frame. Reporting
+            // faces as photographs made a person appear in more pictures than they are in.
+            NamedPeople.Add(new PersonTileViewModel(
+                person.Id,
+                person.Name.Value,
+                assigned.Count,
+                assigned.Select(face => face.PhotoId).Distinct().Count(),
+                thumbnails)
             {
                 Cover = await ResolveCoverAsync(person, assigned, ct).ConfigureAwait(true),
             });
@@ -223,11 +297,15 @@ public sealed partial class PeopleViewModel(
 
         ApplySort();
 
+        NamedFaceCount = namedFaces;
+        FaceCount = await faces.CountAsync(DetectorId, activeOnly: true, ct).ConfigureAwait(true);
+
         UnnamedGroupCount = UnnamedGroups.Count;
         NamedPeopleCount = NamedPeople.Count;
         IgnoredFaceCount = await ignoreGroup.CountAsync(ct).ConfigureAwait(true);
         OnPropertyChanged(nameof(HasGroups));
         OnPropertyChanged(nameof(SingleAppearanceCaption));
+        OnPropertyChanged(nameof(FaceCountBreakdown));
 
         if (records.Count == 0 && named.Count == 0)
         {
@@ -286,8 +364,6 @@ public sealed partial class PeopleViewModel(
         _cancellation = cancellation;
         IsBusy = true;
         IsProgressIndeterminate = true;
-        GroupCommand.NotifyCanExecuteChanged();
-        CancelCommand.NotifyCanExecuteChanged();
 
         var progress = new DelegateProgressSink(update =>
         {
@@ -361,15 +437,98 @@ public sealed partial class PeopleViewModel(
             ProgressFraction = 0;
             _cancellation = null;
             cancellation.Dispose();
-            GroupCommand.NotifyCanExecuteChanged();
-            CancelCommand.NotifyCanExecuteChanged();
         }
     }
 
     private bool IsNotBusy() => !IsBusy;
 
+    /// <summary>
+    /// Re-checks every command that depends on being busy, whenever that changes.
+    /// </summary>
+    /// <remarks>
+    /// In one place rather than at each site that sets the flag. Doing it by hand is how the
+    /// auto-naming button came to be stuck disabled: grouping refreshes the screen before it clears
+    /// the flag, so the button re-checked itself while the run was still going, and the end of the
+    /// run told two other commands about it and not that one. A button that never comes back is
+    /// indistinguishable from a feature that does not work.
+    /// </remarks>
+    partial void OnIsBusyChanged(bool value)
+    {
+        GroupCommand.NotifyCanExecuteChanged();
+        CancelCommand.NotifyCanExecuteChanged();
+        AutoNameCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>
+    /// Gives every group still waiting a placeholder name.
+    /// </summary>
+    /// <remarks>
+    /// Naming is the one thing here nobody can automate, and it is also the thing a user has to do
+    /// dozens of times before the library becomes useful at all. A placeholder is not a real name,
+    /// but it turns an undifferentiated wall of groups into a set of people that can be opened,
+    /// merged and corrected, and renamed properly later when it is clear who is worth the effort.
+    /// </remarks>
+    [RelayCommand(CanExecute = nameof(CanAutoName))]
+    private async Task AutoNameAsync()
+    {
+        IsBusy = true;
+
+        try
+        {
+            var result = await autoName
+                .ExecuteAsync(DefaultNamePrefix, DetectorId, EmbedderId, CancellationToken.None)
+                .ConfigureAwait(true);
+
+            Status = result.IsSuccess
+                ? $"Named {result.Named:N0} group(s)."
+                  + (result.Skipped > 0
+                      ? $" {result.Skipped:N0} could not be named and were left alone."
+                      : string.Empty)
+                : result.Error!;
+
+            if (result.Named > 0)
+            {
+                await RefreshAsync(CancellationToken.None).ConfigureAwait(true);
+            }
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private bool CanAutoName() => !IsBusy && (UnnamedGroupCount > 0 || SingleAppearanceCount > 0);
+
+    partial void OnUnnamedGroupCountChanged(int value) => AutoNameCommand.NotifyCanExecuteChanged();
+
+    partial void OnSingleAppearanceCountChanged(int value) => AutoNameCommand.NotifyCanExecuteChanged();
+
     [RelayCommand(CanExecute = nameof(IsBusy))]
     private void Cancel() => _cancellation?.Cancel();
+
+    /// <summary>
+    /// The breakdown behind the face count, on hover.
+    /// </summary>
+    /// <remarks>
+    /// One number on the card and the detail a click away, rather than three numbers competing for
+    /// the same corner. The remainder is named explicitly when it exists: faces that are neither on
+    /// a person nor in a group waiting are dismissed ones, and a count that did not add up would
+    /// otherwise look like a defect.
+    /// </remarks>
+    public string FaceCountBreakdown
+    {
+        get
+        {
+            var accounted = NamedFaceCount + UnnamedFaceCount;
+            var elsewhere = Math.Max(0, FaceCount - accounted);
+
+            return $"{FaceCount:N0} face(s) found: "
+                   + $"{NamedFaceCount:N0} on named people, "
+                   + $"{UnnamedFaceCount:N0} in groups still to name"
+                   + (elsewhere > 0 ? $", {elsewhere:N0} dismissed" : string.Empty)
+                   + ".";
+        }
+    }
 
     public string SingleAppearanceCaption => HiddenSingleAppearanceCount > 0
         ? $"APPEARS ONCE — showing {SingleAppearances.Count:N0} of {SingleAppearanceCount:N0}"
@@ -511,7 +670,17 @@ public sealed partial class ClusterTileViewModel(
 
     public int Size { get; } = record.Size;
 
-    public string Caption { get; } = $"{record.Size} photo(s)";
+    /// <summary>
+    /// How large the group is, in faces and then in photographs.
+    /// </summary>
+    /// <remarks>
+    /// A group's size is a count of faces, and calling it photographs was wrong wherever the two
+    /// differ — which is exactly the case the user notices, because it is the same picture
+    /// appearing more than once. The photograph count arrives with the cover, since that is when
+    /// the members are read; until then the honest thing to show is the number this is certain of.
+    /// </remarks>
+    [ObservableProperty]
+    private string _caption = $"{record.Size} face(s)";
 
     /// <remarks>
     /// Shows the whole photograph the group's most central face came from, not the face alone.
@@ -531,6 +700,11 @@ public sealed partial class ClusterTileViewModel(
         {
             return;
         }
+
+        var photoCount = members.Select(face => face.PhotoId).Distinct().Count();
+        Caption = photoCount == members.Count
+            ? $"{members.Count:N0} face(s)"
+            : $"{members.Count:N0} face(s) in {photoCount:N0} photo(s)";
 
         var photo = await photos.GetByIdAsync(medoid.PhotoId, CancellationToken.None).ConfigureAwait(true);
         if (photo is null)
@@ -585,12 +759,16 @@ public sealed record FaceCoverViewModel(FaceId FaceId, string PhotoPath, FaceBox
 /// a refresh.
 /// </remarks>
 public sealed partial class PersonTileViewModel(
-    PersonId id, string name, int photoCount, ThumbnailLoader thumbnails) : ObservableObject
+    PersonId id, string name, int faceCount, int photoCount, ThumbnailLoader thumbnails) : ObservableObject
 {
     public PersonId Id { get; } = id;
 
     public string Name { get; } = name;
 
+    /// <summary>How many faces are attached to this person.</summary>
+    public int FaceCount { get; } = faceCount;
+
+    /// <summary>How many distinct photographs those faces come from.</summary>
     public int PhotoCount { get; } = photoCount;
 
     /// <summary>Which face to show, or null for a tile that only needs to carry a name.</summary>
@@ -622,7 +800,14 @@ public sealed partial class PersonTileViewModel(
 
     public override int GetHashCode() => Id.GetHashCode();
 
-    public string Caption => $"{PhotoCount:N0} photo(s)";
+    /// <remarks>
+    /// Both numbers, because a difference between them is information rather than clutter: it means
+    /// this person holds two faces from one photograph, which is either two people in the picture
+    /// or a grouping mistake worth opening.
+    /// </remarks>
+    public string Caption => FaceCount == PhotoCount
+        ? $"{PhotoCount:N0} photo(s)"
+        : $"{FaceCount:N0} faces in {PhotoCount:N0} photo(s)";
 
     /// <summary>
     /// First character of the name, shown on the person's badge.

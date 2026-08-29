@@ -43,6 +43,30 @@ public sealed class NamePersonUseCase(
             return NamingResult.Invalid("That group no longer exists. Re-run grouping and try again.");
         }
 
+        var members = await faces.GetByClusterAsync(clusterId, ct).ConfigureAwait(false);
+
+        // Faces the user has already decided about by hand are not moved by naming their group,
+        // which means a group made up entirely of them has nothing to give the name to. Checked
+        // before anything is written, because the alternative is what it used to do: create the
+        // person, point the group at them, assign nothing, and report success. The user was left
+        // with a name that had no photographs and no indication of why.
+        //
+        // It happens through an ordinary sequence. Moving a photograph to somebody else marks that
+        // face as decided but leaves its group unnamed, so the group comes back round as one to
+        // name, and naming it produces the empty person.
+        var assignable = members.Where(face => !face.IsUserDecided).ToList();
+
+        if (assignable.Count == 0)
+        {
+            var owner = await DescribeOwnerAsync(members, ct).ConfigureAwait(false);
+
+            return NamingResult.Invalid(
+                "Every face in this group has already been placed by hand"
+                + (owner is null ? string.Empty : $", on {owner}")
+                + ". Naming it would create somebody with no photographs. Open that person to move "
+                + "the face instead.");
+        }
+
         var existing = await people.GetByNameAsync(personName, ct).ConfigureAwait(false);
         var merged = existing is not null;
 
@@ -56,15 +80,11 @@ public sealed class NamePersonUseCase(
 
         await clusters.SetPersonAsync(clusterId, person.Id, ct).ConfigureAwait(false);
 
-        var members = await faces.GetByClusterAsync(clusterId, ct).ConfigureAwait(false);
-
         // Marked automatic rather than confirmed. The user has named the group, not inspected
         // every face in it, and treating the whole group as hand-verified would make later
         // corrections impossible to distinguish from the original guess.
         await faces.AssignAsync(
-            [.. members
-                .Where(face => !face.IsUserDecided)
-                .Select(face => new FaceAssignment(face.Id, person.Id, Assignment.Auto))],
+            [.. assignable.Select(face => new FaceAssignment(face.Id, person.Id, Assignment.Auto))],
             ct).ConfigureAwait(false);
 
         await UpdateCentroidAsync(person, record.DetectorId, record.EmbedderId, ct).ConfigureAwait(false);
@@ -77,7 +97,9 @@ public sealed class NamePersonUseCase(
         var absorbed = await AbsorbMatchingGroupsAsync(
             person, clusterId, record.DetectorId, record.EmbedderId, ct).ConfigureAwait(false);
 
-        var total = members.Count + absorbed.Faces;
+        // What was actually assigned, not what the group contained. Counting the members would
+        // report photographs to a person who never received them.
+        var total = assignable.Count + absorbed.Faces;
 
         return NamingResult.Success(person.Id, personName, total, merged, absorbed.Groups);
     }
@@ -170,15 +192,19 @@ public sealed class NamePersonUseCase(
                 continue;
             }
 
+            var assignable = members.Where(face => !face.IsUserDecided).ToList();
+            if (assignable.Count == 0)
+            {
+                continue;
+            }
+
             await clusters.SetPersonAsync(candidate.Id, person.Id, ct).ConfigureAwait(false);
             await faces.AssignAsync(
-                [.. members
-                    .Where(face => !face.IsUserDecided)
-                    .Select(face => new FaceAssignment(face.Id, person.Id, Assignment.Auto))],
+                [.. assignable.Select(face => new FaceAssignment(face.Id, person.Id, Assignment.Auto))],
                 ct).ConfigureAwait(false);
 
             groups++;
-            absorbedFaces += members.Count;
+            absorbedFaces += assignable.Count;
         }
 
         if (groups > 0)
@@ -189,6 +215,31 @@ public sealed class NamePersonUseCase(
         }
 
         return (groups, absorbedFaces);
+    }
+
+    /// <summary>
+    /// Names the person a group's faces already belong to, when they all belong to one.
+    /// </summary>
+    /// <remarks>
+    /// Only to make the refusal above actionable. "This group is already spoken for" leaves a user
+    /// hunting; naming who has it tells them where to go and undo it.
+    /// </remarks>
+    private async Task<string?> DescribeOwnerAsync(IReadOnlyList<Face> members, CancellationToken ct)
+    {
+        var owners = members
+            .Select(face => face.PersonId)
+            .Where(id => id is not null)
+            .Select(id => id!.Value)
+            .Distinct()
+            .ToList();
+
+        if (owners.Count != 1)
+        {
+            return null;
+        }
+
+        var owner = await people.GetByIdAsync(owners[0], ct).ConfigureAwait(false);
+        return owner?.Name.Value;
     }
 
     /// <summary>The unit-length average of a set of vectors.</summary>

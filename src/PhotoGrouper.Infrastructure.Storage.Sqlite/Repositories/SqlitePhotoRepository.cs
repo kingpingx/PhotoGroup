@@ -237,6 +237,19 @@ public sealed class SqlitePhotoRepository(SqliteConnectionFactory connections) :
     }
 
     /// <remarks>
+    /// The faces, embeddings and signature go with it, by the cascades declared in the schema
+    /// rather than by four statements here that could fall out of step with them.
+    /// </remarks>
+    public async Task RemoveAsync(PhotoId id, CancellationToken ct)
+    {
+        await using var connection = connections.Open();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM photos WHERE id = $id;";
+        command.Parameters.AddWithValue("$id", SqliteMappings.ToDb(id.Value));
+        await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <remarks>
     /// Conflict is resolved on path rather than id because the scanner identifies a file by
     /// where it lives. Re-indexing a known path must update that row, not insert a second
     /// one carrying a freshly generated id.

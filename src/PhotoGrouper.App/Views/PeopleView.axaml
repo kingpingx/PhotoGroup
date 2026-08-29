@@ -21,15 +21,48 @@
                                 Content="{Binding IgnoredFaceCount, StringFormat='Restore {0:N0} dismissed'}"
                                 ToolTip.Tip="Bring dismissed faces back into grouping" />
                     </StackPanel>
+
+                    <!-- Naming is what a user repeats most and what stands between a grouped
+                         library and a useful one. A placeholder is not a real name, but it turns a
+                         wall of anonymous groups into people who can be opened, merged and
+                         renamed, and it makes the ones worth a real name obvious. -->
+                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,6,0,0">
+                        <Button Content="Name the rest automatically"
+                                Command="{Binding AutoNameCommand}"
+                                ToolTip.Tip="Give every group still waiting a numbered placeholder" />
+                        <Button Content="Find duplicate people"
+                                Command="{Binding DuplicatePeople.OpenCommand}"
+                                IsEnabled="{Binding NamedPeopleCount}"
+                                ToolTip.Tip="Compare everyone already named and find anybody named twice" />
+                        <TextBox Text="{Binding DefaultNamePrefix}" Width="110" FontSize="12"
+                                 Watermark="Person"
+                                 ToolTip.Tip="The stem the numbers are added to" />
+                        <TextBlock Classes="muted" VerticalAlignment="Center" FontSize="11"
+                                   Text="numbered from 1, largest group first" />
+                    </StackPanel>
                 </StackPanel>
 
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="20"
                             VerticalAlignment="Center">
+                    <!-- The material the other two counts are made of. Twelve people can hold
+                         eighteen faces or forty, and the split between named and waiting is what
+                         says how much of the library is actually done. -->
+                    <StackPanel ToolTip.Tip="{Binding FaceCountBreakdown}">
+                        <TextBlock Text="{Binding FaceCount, StringFormat='{}{0:N0}'}"
+                                   FontSize="22" FontWeight="Bold" HorizontalAlignment="Right" />
+                        <TextBlock Text="FACES" Classes="label" HorizontalAlignment="Right" />
+                    </StackPanel>
+                    <StackPanel ToolTip.Tip="{Binding FaceCountBreakdown}">
+                        <TextBlock Text="{Binding NamedFaceCount, StringFormat='{}{0:N0}'}"
+                                   FontSize="22" FontWeight="Bold" HorizontalAlignment="Right"
+                                   Foreground="{StaticResource Success}" />
+                        <TextBlock Text="FACES NAMED" Classes="label" HorizontalAlignment="Right" />
+                    </StackPanel>
                     <StackPanel>
                         <TextBlock Text="{Binding NamedPeopleCount, StringFormat='{}{0:N0}'}"
                                    FontSize="22" FontWeight="Bold" HorizontalAlignment="Right"
                                    Foreground="{StaticResource Success}" />
-                        <TextBlock Text="NAMED" Classes="label" HorizontalAlignment="Right" />
+                        <TextBlock Text="PEOPLE" Classes="label" HorizontalAlignment="Right" />
                     </StackPanel>
                     <StackPanel>
                         <TextBlock Text="{Binding UnnamedGroupCount, StringFormat='{}{0:N0}'}"
@@ -59,16 +92,22 @@
 
                 <!-- Named people first: once somebody has a name, they are what the user came for. -->
                 <StackPanel Spacing="10" IsVisible="{Binding NamedPeopleCount}">
-                    <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                    <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
                         <TextBlock Grid.Column="0" Text="PEOPLE" Classes="label"
                                    VerticalAlignment="Center" />
-                        <TextBlock Grid.Column="2" Text="Sort by" Classes="muted"
+                        <!-- Tiles answer "who is this"; the table answers "who do I have, and how
+                             much of each". Both carry the face, so the table loses nothing. -->
+                        <ToggleButton Grid.Column="2" Classes="chip" IsChecked="{Binding IsTableView}"
+                                      Margin="0,0,14,0" FontSize="11" Padding="10,5"
+                                      Content="Table view"
+                                      ToolTip.Tip="Show the people as rows with their counts" />
+                        <TextBlock Grid.Column="3" Text="Sort by" Classes="muted"
                                    VerticalAlignment="Center" Margin="0,0,8,0" />
-                        <ComboBox Grid.Column="3" MinWidth="150"
+                        <ComboBox Grid.Column="4" MinWidth="150"
                                   ItemsSource="{Binding SortOptions}"
                                   SelectedItem="{Binding SelectedSort}" />
                     </Grid>
-                    <ItemsControl ItemsSource="{Binding NamedPeople}">
+                    <ItemsControl ItemsSource="{Binding NamedPeople}" IsVisible="{Binding !IsTableView}">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <WrapPanel />
@@ -109,6 +148,64 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+
+                    <!-- The same people as rows. Column widths are repeated between the header and
+                         the row template rather than shared, because a Grid's columns only align
+                         within one Grid; the alternative is a full data grid control for four
+                         columns that never change. -->
+                    <StackPanel Spacing="2" IsVisible="{Binding IsTableView}"
+                                MaxWidth="760" HorizontalAlignment="Left">
+                        <Grid ColumnDefinitions="56,*,110,110" Margin="12,0,12,6">
+                            <TextBlock Grid.Column="1" Text="NAME" Classes="label" />
+                            <TextBlock Grid.Column="2" Text="FACES" Classes="label"
+                                       HorizontalAlignment="Right" />
+                            <TextBlock Grid.Column="3" Text="PHOTOS" Classes="label"
+                                       HorizontalAlignment="Right" />
+                        </Grid>
+
+                        <ItemsControl ItemsSource="{Binding NamedPeople}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:PersonTileViewModel">
+                                    <Button Classes="ghost" Padding="0" Margin="0,0,0,4"
+                                            HorizontalAlignment="Stretch"
+                                            HorizontalContentAlignment="Stretch"
+                                            Command="{Binding $parent[ItemsControl].((vm:PeopleViewModel)DataContext).OpenPersonCommand}"
+                                            CommandParameter="{Binding}"
+                                            AttachedToVisualTree="OnPersonTileAttached"
+                                            ToolTip.Tip="Open to rename, remove photos, or delete">
+                                        <Border Classes="tile" Padding="12,8">
+                                            <Grid ColumnDefinitions="56,*,110,110">
+                                                <Border Grid.Column="0" Width="40" Height="40"
+                                                        CornerRadius="8" ClipToBounds="True"
+                                                        HorizontalAlignment="Left"
+                                                        Background="{StaticResource AccentGradient}">
+                                                    <Grid>
+                                                        <TextBlock Text="{Binding Initial}"
+                                                                   Foreground="#05080F" FontSize="16"
+                                                                   FontWeight="Bold"
+                                                                   HorizontalAlignment="Center"
+                                                                   VerticalAlignment="Center" />
+                                                        <Image Source="{Binding CoverImage}"
+                                                               Stretch="UniformToFill" />
+                                                    </Grid>
+                                                </Border>
+                                                <TextBlock Grid.Column="1" Text="{Binding Name}"
+                                                           FontWeight="SemiBold"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="2" Text="{Binding FaceCount}"
+                                                           HorizontalAlignment="Right"
+                                                           VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="3" Text="{Binding PhotoCount}"
+                                                           HorizontalAlignment="Right"
+                                                           VerticalAlignment="Center" />
+                                            </Grid>
+                                        </Border>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
                 </StackPanel>
 
                 <!-- Naming a group is the core interaction of the application, so the box sits
@@ -149,7 +246,7 @@
                                         </Grid>
                                         <TextBlock Text="{Binding Caption}" Classes="muted" FontSize="11" />
                                         <TextBox Text="{Binding ProposedName}"
-                                                 Watermark="Type a name, press Enter"
+                                                 Watermark="Type a name, or press Enter"
                                                  KeyDown="OnNameKeyDown" />
                                         <Button Content="Name this person" Classes="primary"
                                                 HorizontalAlignment="Stretch"
@@ -229,8 +326,16 @@
                                             </Border>
                                         </Grid>
                                         <TextBox Text="{Binding ProposedName}"
-                                                 Watermark="Name, then Enter"
+                                                 Watermark="Type a name"
                                                  FontSize="12" KeyDown="OnNameKeyDown" />
+                                        <!-- Enter alone was the only way to commit a name here,
+                                             which is invisible unless somebody happens to try it.
+                                             The larger tiles above always had the button. -->
+                                        <Button Content="Name this person" Classes="primary"
+                                                HorizontalAlignment="Stretch"
+                                                HorizontalContentAlignment="Center" FontSize="11"
+                                                Command="{Binding $parent[ItemsControl].((vm:PeopleViewModel)DataContext).NameCommand}"
+                                                CommandParameter="{Binding}" />
                                         <StackPanel Spacing="6" IsVisible="{Binding HasKnownPeople}">
                                             <ComboBox ItemsSource="{Binding KnownPeople}"
                                                       SelectedItem="{Binding SelectedPerson}"
@@ -311,6 +416,23 @@
                                 Command="{Binding Detail.RemoveSelectedCommand}" />
                     </StackPanel>
 
+                    <!-- A burst leaves several frames of one instant on a person, all genuinely
+                         them, so nothing else here has any reason to separate them. This marks the
+                         sets on the tiles already on screen and selects the extras, leaving the
+                         remove button above to be what actually acts. -->
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <TextBlock Text="TIDY" Classes="label" VerticalAlignment="Center" />
+                        <Button Content="Find near-identical"
+                                Command="{Binding Detail.FindDuplicatesCommand}"
+                                ToolTip.Tip="Mark faces of this person that are the same moment, such as frames of one burst" />
+                        <TextBlock Classes="muted" VerticalAlignment="Center"
+                                   IsVisible="{Binding Detail.HasDuplicateSummary}"
+                                   Text="{Binding Detail.DuplicateSummary}" />
+                        <TextBlock Classes="muted" VerticalAlignment="Center"
+                                   IsVisible="{Binding !Detail.HasDuplicateSummary}"
+                                   Text="Marks the sets and selects the extras. The photos stay in the library." />
+                    </StackPanel>
+
                     <!-- Moving is the correction for a face grouping put on the wrong person, as
                          opposed to one who is nobody in this library. Removing only detaches it and
                          leaves it to be grouped again; moving says where it actually belongs. -->
@@ -386,6 +508,35 @@
                                     <TextBlock Text="&#x2713;" IsVisible="{Binding IsSelected}"
                                                FontSize="34" FontWeight="Bold" Foreground="White"
                                                HorizontalAlignment="Center" VerticalAlignment="Center" />
+
+                                    <!-- Which set this belongs to, and how alike it is. Both sit
+                                         above the selection tint, because the tint is what says a
+                                         photograph is about to be removed and these are what
+                                         justify it. -->
+                                    <StackPanel HorizontalAlignment="Right" VerticalAlignment="Top"
+                                                Margin="6" Spacing="3"
+                                                IsVisible="{Binding IsInDuplicateSet}">
+                                        <Border Padding="6,2" CornerRadius="4"
+                                                HorizontalAlignment="Right"
+                                                Background="#CC0B1220">
+                                            <TextBlock Text="{Binding DuplicateBadge}" FontSize="9"
+                                                       FontWeight="Bold"
+                                                       Foreground="{StaticResource TextPrimary}" />
+                                        </Border>
+                                        <Border Padding="6,2" CornerRadius="4"
+                                                HorizontalAlignment="Right"
+                                                Background="{StaticResource AccentGradient}"
+                                                IsVisible="{Binding IsDuplicateKeeper}">
+                                            <TextBlock Text="KEEP" FontSize="9" FontWeight="Bold"
+                                                       Foreground="#05080F" />
+                                        </Border>
+                                        <Border Padding="6,2" CornerRadius="4"
+                                                HorizontalAlignment="Right"
+                                                Background="#CC0B1220">
+                                            <TextBlock Text="{Binding MatchCaption}" FontSize="9"
+                                                       Foreground="{StaticResource TextMuted}" />
+                                        </Border>
+                                    </StackPanel>
                                 </Grid>
                             </Border>
                         </DataTemplate>
@@ -396,6 +547,123 @@
             <TextBlock Grid.Row="3" Text="{Binding Detail.Status}"
                        Foreground="{StaticResource Accent}" FontSize="12"
                        TextWrapping="Wrap" Margin="0,14,0,0" />
+        </Grid>
+    </Border>
+
+    <!-- Names that look like one person. Merging destroys a name, so each set is decided on its
+         own, with the face shown large enough to judge by: the question is whether two faces are
+         the same person, and no name can answer that. -->
+    <Border IsVisible="{Binding DuplicatePeople.IsOpen}" Background="#F2050810">
+        <Grid RowDefinitions="Auto,*,Auto" Margin="32,26">
+
+            <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,16">
+                <Button Grid.Column="0" Content="← Back" VerticalAlignment="Center"
+                        Margin="0,0,16,0" Command="{Binding DuplicatePeople.CloseCommand}" />
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock Text="NAMED TWICE" Classes="heading" />
+                    <TextBlock Classes="muted"
+                               Text="Sets of names whose faces look like one person. Click a face to choose which name survives." />
+                </StackPanel>
+                <Button Grid.Column="2" Content="Look again"
+                        Command="{Binding DuplicatePeople.FindCommand}"
+                        VerticalAlignment="Center" />
+            </Grid>
+
+            <Border Grid.Row="1" Classes="card" Padding="40"
+                    IsVisible="{Binding !DuplicatePeople.Groups.Count}"
+                    VerticalAlignment="Center" HorizontalAlignment="Center">
+                <StackPanel Spacing="10" HorizontalAlignment="Center">
+                    <TextBlock Text="⧉" FontSize="34" HorizontalAlignment="Center"
+                               Foreground="{StaticResource Accent}" />
+                    <TextBlock Classes="muted" HorizontalAlignment="Center" MaxWidth="400"
+                               TextWrapping="Wrap" TextAlignment="Center"
+                               Text="{Binding DuplicatePeople.EmptyCaption}" />
+                </StackPanel>
+            </Border>
+
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                          IsVisible="{Binding DuplicatePeople.Groups.Count}">
+                <ItemsControl ItemsSource="{Binding DuplicatePeople.Groups}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:DuplicatePersonGroupViewModel">
+                            <Border Classes="card" Padding="14" Margin="0,0,0,12">
+                                <StackPanel Spacing="10">
+                                    <Grid ColumnDefinitions="Auto,*,Auto">
+                                        <TextBlock Grid.Column="0" Text="{Binding Caption}"
+                                                   Classes="label" VerticalAlignment="Center" />
+                                        <Button Grid.Column="2" Classes="primary"
+                                                Content="{Binding Action}"
+                                                Command="{Binding $parent[ItemsControl].((vm:DuplicatePeopleViewModel)DataContext).MergeCommand}"
+                                                CommandParameter="{Binding}" />
+                                    </Grid>
+
+                                    <ItemsControl ItemsSource="{Binding Members}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:DuplicatePersonViewModel">
+                                                <Button Classes="ghost" Padding="0" Margin="0,0,12,0"
+                                                        AttachedToVisualTree="OnDuplicatePersonAttached"
+                                                        Command="{Binding $parent[ItemsControl].((vm:DuplicatePeopleViewModel)DataContext).ChooseKeeperCommand}"
+                                                        CommandParameter="{Binding}"
+                                                        ToolTip.Tip="Keep this name and merge the others into it">
+                                                    <Border Classes="tile" Width="168" Padding="10">
+                                                        <StackPanel Spacing="8">
+                                                            <Grid>
+                                                                <Border Width="148" Height="148"
+                                                                        CornerRadius="10" ClipToBounds="True"
+                                                                        Background="{StaticResource AccentGradient}">
+                                                                    <Grid>
+                                                                        <TextBlock Text="{Binding Initial}"
+                                                                                   Foreground="#05080F"
+                                                                                   FontSize="46" FontWeight="Bold"
+                                                                                   HorizontalAlignment="Center"
+                                                                                   VerticalAlignment="Center" />
+                                                                        <Image Source="{Binding Face}"
+                                                                               Stretch="UniformToFill" />
+                                                                    </Grid>
+                                                                </Border>
+                                                                <Border IsVisible="{Binding IsKeeper}"
+                                                                        BorderThickness="3" CornerRadius="11"
+                                                                        BorderBrush="{StaticResource Accent}" />
+                                                                <Border IsVisible="{Binding IsKeeper}"
+                                                                        VerticalAlignment="Top"
+                                                                        HorizontalAlignment="Left"
+                                                                        Margin="6" Padding="7,2" CornerRadius="4"
+                                                                        Background="{StaticResource AccentGradient}">
+                                                                    <TextBlock Text="KEEP" FontSize="10"
+                                                                               FontWeight="Bold"
+                                                                               Foreground="#05080F" />
+                                                                </Border>
+                                                            </Grid>
+                                                            <TextBlock Text="{Binding Name}"
+                                                                       FontWeight="SemiBold"
+                                                                       TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock Text="{Binding Caption}"
+                                                                       Classes="muted" FontSize="10" />
+                                                            <TextBlock Text="{Binding Match}"
+                                                                       Foreground="{StaticResource Accent}"
+                                                                       FontSize="10" />
+                                                        </StackPanel>
+                                                    </Border>
+                                                </Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+            <Border Grid.Row="2" Classes="card" Padding="16,12" Margin="0,14,0,0">
+                <TextBlock Text="{Binding DuplicatePeople.Status}" Classes="muted"
+                           TextWrapping="Wrap" />
+            </Border>
         </Grid>
     </Border>
     </Grid>

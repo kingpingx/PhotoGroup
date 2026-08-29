@@ -37,6 +37,7 @@ public sealed partial class LibraryViewModel : ObservableObject
         IFaceRepository faces,
         ThumbnailLoader thumbnails,
         FaceOverlayViewModel overlay,
+        DuplicatesViewModel duplicates,
         LibraryChangedNotifier libraryChanged)
     {
         _scanLibrary = scanLibrary;
@@ -47,11 +48,22 @@ public sealed partial class LibraryViewModel : ObservableObject
         _faces = faces;
         _thumbnails = thumbnails;
         Overlay = overlay;
+        Duplicates = duplicates;
 
         libraryChanged.Subscribe(() => InitializeAsync(CancellationToken.None));
     }
 
     public FaceOverlayViewModel Overlay { get; }
+
+    /// <summary>
+    /// The panel for finding the same picture more than once.
+    /// </summary>
+    /// <remarks>
+    /// Hangs off the library rather than being a step of its own, because it is maintenance on a
+    /// library that already exists. Overlaid for the same reason the person panel is: correcting
+    /// what is on screen is done while looking at it, not somewhere to navigate to.
+    /// </remarks>
+    public DuplicatesViewModel Duplicates { get; }
 
     /// <summary>The detectors this build offers, for the toggle.</summary>
     public IReadOnlyList<ProviderInfo> Detectors { get; } = DetectorRegistry.Available;

@@ -209,10 +209,47 @@ public sealed class ManagePeopleUseCaseTests : IDisposable
         var wrong = await AddFaceAsync(alice, @"D:\photos\1.jpg");
         await AddFaceAsync(alice, @"D:\photos\2.jpg");
 
-        var result = await _subject.RemoveFacesAsync(alice, [wrong], default);
+        var result = await _subject.RemoveFacesAsync(alice, [wrong], Detector, "embedder", default);
 
         result.IsSuccess.Should().BeTrue();
         (await _subject.GetPhotosAsync(alice, Detector, default)).Should().ContainSingle();
+    }
+
+    /// <remarks>
+    /// The regression this whole change exists for. Removing photographs used to leave the person
+    /// carrying an average of faces they no longer had, and that average is what the next grouping
+    /// run compares new faces against — so a correction the user had made went on describing them
+    /// until something else happened to recompute it. The method could not have fixed it: it took
+    /// no detector and no embedder to recompute with.
+    /// </remarks>
+    [Fact]
+    public async Task Removing_photographs_from_a_person_recomputes_their_average()
+    {
+        var alice = await AddPersonAsync("Alice");
+        var kept = await AddFaceAsync(alice, @"D:\photos\kept.jpg");
+        var removed = await AddFaceAsync(alice, @"D:\photos
+emoved.jpg");
+
+        // Two vectors pointing in different directions, so an average over both is distinguishable
+        // from an average over either alone.
+        await _embeddings.BulkUpsertAsync("embedder", "1",
+            [new FaceEmbedding(kept, Unit(0)), new FaceEmbedding(removed, Unit(1))], default);
+
+        await _subject.RemoveFacesAsync(alice, [removed], Detector, "embedder", default);
+
+        var centroid = (await _people.GetByIdAsync(alice, default))!.Centroid;
+
+        centroid.Should().NotBeNull();
+        centroid![0].Should().BeApproximately(1f, 0.001f, "only the kept face is theirs now");
+        centroid[1].Should().BeApproximately(0f, 0.001f, "the removed face no longer contributes");
+    }
+
+    /// <summary>A unit vector along one axis, so an average over a set is easy to read.</summary>
+    private static float[] Unit(int axis)
+    {
+        var v = new float[8];
+        v[axis] = 1f;
+        return v;
     }
 
     [Fact]
@@ -223,7 +260,7 @@ public sealed class ManagePeopleUseCaseTests : IDisposable
         var second = await AddFaceAsync(alice, @"D:\photos\2.jpg");
         await AddFaceAsync(alice, @"D:\photos\3.jpg");
 
-        await _subject.RemoveFacesAsync(alice, [first, second], default);
+        await _subject.RemoveFacesAsync(alice, [first, second], Detector, "embedder", default);
 
         (await _subject.GetPhotosAsync(alice, Detector, default)).Should().ContainSingle();
     }
@@ -237,7 +274,7 @@ public sealed class ManagePeopleUseCaseTests : IDisposable
         var alice = await AddPersonAsync("Alice");
         var wrong = await AddFaceAsync(alice, @"D:\photos\1.jpg");
 
-        await _subject.RemoveFacesAsync(alice, [wrong], default);
+        await _subject.RemoveFacesAsync(alice, [wrong], Detector, "embedder", default);
 
         var all = new List<Face>();
         await foreach (var face in _faces.StreamByDetectorAsync(Detector, activeOnly: true, default))
@@ -255,7 +292,7 @@ public sealed class ManagePeopleUseCaseTests : IDisposable
     {
         var alice = await AddPersonAsync("Alice");
 
-        (await _subject.RemoveFacesAsync(alice, [], default)).IsSuccess.Should().BeFalse();
+        (await _subject.RemoveFacesAsync(alice, [], Detector, "embedder", default)).IsSuccess.Should().BeFalse();
     }
 
     [Fact]
@@ -346,7 +383,7 @@ public sealed class ManagePeopleUseCaseTests : IDisposable
 
         (await _subject.RenameAsync(vanished, "Alice", default)).IsSuccess.Should().BeFalse();
         (await _subject.DeleteAsync(vanished, Detector, default)).IsSuccess.Should().BeFalse();
-        (await _subject.RemoveFacesAsync(vanished, [FaceId.New()], default)).IsSuccess.Should().BeFalse();
+        (await _subject.RemoveFacesAsync(vanished, [FaceId.New()], Detector, "embedder", default)).IsSuccess.Should().BeFalse();
     }
 
     public void Dispose() => _database.Dispose();

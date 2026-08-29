@@ -215,4 +215,28 @@ internal static class SqlScripts
             created_utc TEXT NOT NULL
         );
         """;
+
+    /// <summary>
+    /// What a photograph looks like, for finding near-duplicates.
+    /// </summary>
+    /// <remarks>
+    /// A table of its own rather than columns on photos, for the same reason face embeddings are
+    /// not columns on faces: it is derived, it is recomputed as a batch, and a photo row is read
+    /// on every screen in the application while this is read by one. Cascading on delete keeps it
+    /// from outliving the photograph it describes.
+    ///
+    /// The fingerprint is a pair of INTEGERs because comparison is by how many bits differ, not by
+    /// equality, and because one direction is not enough to tell pictures apart. Stored as signed
+    /// values, which is how SQLite holds a 64-bit integer; the top bit is part of the fingerprint
+    /// and the adapter reinterprets rather than losing it.
+    /// </remarks>
+    public const string V4PhotoSignatures = """
+        CREATE TABLE photo_signatures (
+            photo_id     BLOB    NOT NULL PRIMARY KEY REFERENCES photos (id) ON DELETE CASCADE,
+            hash_across  INTEGER NOT NULL,
+            hash_down    INTEGER NOT NULL,
+            sharpness    REAL    NOT NULL,
+            computed_utc TEXT    NOT NULL
+        );
+        """;
 }
