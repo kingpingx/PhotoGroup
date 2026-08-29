@@ -126,6 +126,45 @@ public sealed class LocalFileSystem : IFileSystem
         return new ContentHash(Convert.ToHexString(hash.GetCurrentHash()));
     }
 
+    /// <summary>
+    /// Names reserved by Windows whatever extension follows them.
+    /// </summary>
+    /// <remarks>
+    /// Creating any of these fails, or worse, silently addresses a device. They are meaningless on
+    /// other platforms but harmless there, and a library carried between machines should produce
+    /// the same folders on both.
+    /// </remarks>
+    private static readonly HashSet<string> ReservedNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "CON", "PRN", "AUX", "NUL",
+        "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+        "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    };
+
+    public string ToFolderName(string name)
+    {
+        var cleaned = new string([.. (name ?? string.Empty)
+            .Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c)]);
+
+        // Windows silently strips a trailing dot or space from a directory name, which turns two
+        // people called "Sam" and "Sam." into one folder and files one of them under the other.
+        cleaned = cleaned.Trim().TrimEnd('.', ' ');
+
+        if (cleaned.Length == 0)
+        {
+            return "Unnamed";
+        }
+
+        if (ReservedNames.Contains(Path.GetFileNameWithoutExtension(cleaned)))
+        {
+            cleaned = "_" + cleaned;
+        }
+
+        // Bounded well inside the path limit, because this is one segment of a path that also has
+        // a root and a file name to fit.
+        return cleaned.Length > 120 ? cleaned[..120].TrimEnd('.', ' ') : cleaned;
+    }
+
     public async Task CopyAsync(string source, string destination, CancellationToken ct)
     {
         EnsureParentDirectory(destination);

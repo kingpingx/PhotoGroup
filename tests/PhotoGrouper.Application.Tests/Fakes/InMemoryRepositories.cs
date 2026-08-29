@@ -32,6 +32,15 @@ public sealed class InMemoryPhotoRepository : IPhotoReader, IPhotoWriter
     public Task<IReadOnlyList<Photo>> GetByStateAsync(PhotoState state, int limit, CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<Photo>>(_byPath.Values.Where(p => p.State == state).Take(limit).ToList());
 
+    public Task<IReadOnlyList<Photo>> SearchByPathAsync(string fragment, int limit, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<Photo>>(
+            string.IsNullOrWhiteSpace(fragment)
+                ? []
+                : [.. _byPath.Values
+                    .Where(p => p.Path.Contains(fragment, StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(p => p.Path, StringComparer.OrdinalIgnoreCase)
+                    .Take(limit)]);
+
     public Task<int> CountAsync(CancellationToken ct) => Task.FromResult(_byPath.Count);
 
     /// <summary>Detection records, keyed by photo and detector, mirroring the real store.</summary>

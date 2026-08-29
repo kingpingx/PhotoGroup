@@ -40,6 +40,44 @@ public sealed class SqlitePhotoRepository(SqliteConnectionFactory connections) :
         return await reader.ReadAsync(ct).ConfigureAwait(false) ? Map(reader) : null;
     }
 
+    /// <remarks>
+    /// LIKE with the fragment escaped, so a name holding a percent or an underscore searches for
+    /// those characters rather than for "anything". Both are ordinary in camera file names, and an
+    /// unescaped underscore quietly matches any single character.
+    /// </remarks>
+    public async Task<IReadOnlyList<Photo>> SearchByPathAsync(
+        string fragment, int limit, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(fragment))
+        {
+            return [];
+        }
+
+        await using var connection = connections.Open();
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            $"SELECT {SelectColumns} FROM photos " +
+            @"WHERE path LIKE $pattern ESCAPE '\' ORDER BY path LIMIT $limit;";
+
+        // The escape character itself first, or escaping the wildcards would then be escaped again.
+        var escaped = fragment
+            .Replace(@"\", @"\\")
+            .Replace("%", @"\%")
+            .Replace("_", @"\_");
+
+        command.Parameters.AddWithValue("$pattern", $"%{escaped}%");
+        command.Parameters.AddWithValue("$limit", limit);
+
+        var results = new List<Photo>();
+        await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            results.Add(Map(reader));
+        }
+
+        return results;
+    }
+
     public async Task<IReadOnlyList<Photo>> GetByStateAsync(PhotoState state, int limit, CancellationToken ct)
     {
         await using var connection = connections.Open();

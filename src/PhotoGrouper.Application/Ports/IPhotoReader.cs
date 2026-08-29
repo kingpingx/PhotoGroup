@@ -25,6 +25,19 @@ public interface IPhotoReader
     Task<IReadOnlyList<Photo>> GetByStateAsync(PhotoState state, int limit, CancellationToken ct);
 
     /// <summary>
+    /// Photographs whose path contains the given text.
+    /// </summary>
+    /// <remarks>
+    /// For searching by what a camera called a file, which is how somebody looks for a photograph
+    /// they remember by date or by burst number rather than by who is in it. Bounded, because the
+    /// answer feeds a grid somebody scans and a fragment of one character matches a whole library.
+    ///
+    /// Matched against the whole path rather than the file name alone, so a folder can be searched
+    /// for too; callers that mean the name only narrow it themselves.
+    /// </remarks>
+    Task<IReadOnlyList<Photo>> SearchByPathAsync(string fragment, int limit, CancellationToken ct);
+
+    /// <summary>
     /// Photographs the given detector has not examined yet.
     /// </summary>
     /// <remarks>

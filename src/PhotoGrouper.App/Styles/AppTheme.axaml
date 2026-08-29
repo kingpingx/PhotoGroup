@@ -141,6 +141,18 @@
         <Setter Property="Opacity" Value="0.88" />
     </Style>
 
+    <!-- Same reasoning as the chip above: the tick is drawn in the system accent colour, which is
+         whatever the user chose in Windows personalisation, and on a machine set to red a chosen
+         option reads as a warning. -->
+    <Style Selector="CheckBox:checked /template/ Border#NormalRectangle">
+        <Setter Property="Background" Value="{StaticResource Accent}" />
+        <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+    </Style>
+
+    <Style Selector="CheckBox:checked /template/ Path#CheckGlyph">
+        <Setter Property="Fill" Value="#05080F" />
+    </Style>
+
     <Style Selector="Button.danger">
         <Setter Property="BorderBrush" Value="{StaticResource Danger}" />
         <Setter Property="Foreground" Value="{StaticResource Danger}" />

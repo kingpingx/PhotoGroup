@@ -15,19 +15,23 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public MainWindowViewModel(
         LibraryViewModel library,
         PeopleViewModel people,
+        SearchViewModel search,
+        OrganiseViewModel organise,
         SettingsViewModel settings,
         LibraryChangedNotifier libraryChanged)
     {
         Library = library;
         People = people;
+        Search = search;
+        Organise = organise;
         Settings = settings;
 
         Steps =
         [
             new WorkflowStep(0, "1", "Library"),
             new WorkflowStep(1, "2", "People"),
-            new WorkflowStep(2, "3", "Search", isAvailable: false),
-            new WorkflowStep(3, "4", "Organise", isAvailable: false),
+            new WorkflowStep(2, "3", "Search"),
+            new WorkflowStep(3, "4", "Organise"),
         ];
 
         // The captions read from the screens themselves, so a scan or a grouping updates the flow
@@ -48,6 +52,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     public PeopleViewModel People { get; }
 
+    public SearchViewModel Search { get; }
+
+    public OrganiseViewModel Organise { get; }
+
     public SettingsViewModel Settings { get; }
 
     public ObservableCollection<WorkflowStep> Steps { get; }
@@ -58,6 +66,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public bool IsLibraryVisible => SelectedIndex == 0;
 
     public bool IsPeopleVisible => SelectedIndex == 1;
+
+    public bool IsSearchVisible => SelectedIndex == 2;
+
+    public bool IsOrganiseVisible => SelectedIndex == 3;
 
     public bool IsSettingsVisible => SelectedIndex == SettingsIndex;
 
@@ -90,9 +102,24 @@ public sealed partial class MainWindowViewModel : ObservableObject
         {
             _ = People.RefreshAsync(CancellationToken.None);
         }
+        else if (value == 3)
+        {
+            // Both the people to choose from and the list of past runs come from storage, so this
+            // screen has to rebuild on becoming visible like the others.
+            _ = Organise.RefreshAsync(CancellationToken.None);
+        }
+        else if (value == 2)
+        {
+            // The list of people to search among is built from storage, so it has to be rebuilt
+            // whenever this screen is shown; somebody who named three people and came straight
+            // here would otherwise be offered a list from before they did.
+            _ = Search.RefreshAsync(CancellationToken.None);
+        }
 
         OnPropertyChanged(nameof(IsLibraryVisible));
         OnPropertyChanged(nameof(IsPeopleVisible));
+        OnPropertyChanged(nameof(IsSearchVisible));
+        OnPropertyChanged(nameof(IsOrganiseVisible));
         OnPropertyChanged(nameof(IsSettingsVisible));
     }
 
@@ -133,7 +160,13 @@ public sealed partial class MainWindowViewModel : ObservableObject
                 : "Group faces";
         Steps[1].IsComplete = People.NamedPeopleCount > 0;
 
-        Steps[2].Caption = "Coming soon";
-        Steps[3].Caption = "Coming soon";
+        // Search is usable the moment somebody has been named, and useless before that, so the
+        // caption says which of those is true rather than repeating the step's own title.
+        Steps[2].Caption = People.NamedPeopleCount > 0
+            ? $"find among {People.NamedPeopleCount:N0} named"
+            : "name somebody first";
+        Steps[3].Caption = People.NamedPeopleCount > 0
+            ? "write folders per person"
+            : "name somebody first";
     }
 }

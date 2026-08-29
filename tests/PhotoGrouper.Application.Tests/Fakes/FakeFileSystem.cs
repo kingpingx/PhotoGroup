@@ -84,6 +84,18 @@ public sealed class FakeFileSystem : IFileSystem
     public Task<ContentHash> ComputeContentHashAsync(string path, CancellationToken ct) =>
         Task.FromResult(new ContentHash(_files[path].Content));
 
+    /// <remarks>
+    /// The real rule is a property of the filesystem, so this keeps only the part any adapter must
+    /// honour: a name never comes back empty, and never carries a path separator.
+    /// </remarks>
+    public string ToFolderName(string name)
+    {
+        var cleaned = new string([.. (name ?? string.Empty)
+            .Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c)]).Trim();
+
+        return cleaned.Length == 0 ? "Unnamed" : cleaned;
+    }
+
     public Task CopyAsync(string source, string destination, CancellationToken ct)
     {
         Guard(source);

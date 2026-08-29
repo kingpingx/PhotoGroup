@@ -1,0 +1,115 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:PhotoGrouper.App.ViewModels"
+             x:Class="PhotoGrouper.App.Views.SearchView"
+             x:DataType="vm:SearchViewModel">
+
+    <Grid RowDefinitions="Auto,*,Auto" Margin="28,22">
+
+        <!-- The question, built rather than typed. Choosing from the people already named avoids
+             depending on spelling a name the same way twice, and is the only way to ask about two
+             people at once. -->
+        <Border Grid.Row="0" Classes="card" Padding="20,16" Margin="0,0,0,18">
+            <StackPanel Spacing="12">
+                <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                    <TextBlock Grid.Column="0" Text="WHO" Classes="label" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Classes="muted" VerticalAlignment="Center"
+                               Margin="12,0,0,0"
+                               Text="{Binding ChosenCount, StringFormat='{}{0:N0} chosen'}" />
+
+                    <!-- Checked asks for photographs holding everybody chosen; cleared asks for
+                         any of them. Two genuinely different questions, which is the reason to
+                         choose more than one person in the first place. -->
+                    <CheckBox Grid.Column="2" Margin="0,0,14,0" IsChecked="{Binding MatchAll}"
+                              Content="together in one photo"
+                              ToolTip.Tip="Cleared, this finds photos holding any of the people chosen" />
+
+                    <Button Grid.Column="3" Content="Clear" Classes="ghost"
+                            Command="{Binding ClearCommand}" />
+                </Grid>
+
+                <!-- Capped in height so a library with two hundred names does not push the results
+                     off the screen; it scrolls instead. -->
+                <ScrollViewer MaxHeight="132" VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{Binding People}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:SearchPersonViewModel">
+                                <ToggleButton Classes="chip" Margin="0,0,8,8"
+                                              FontSize="12" Padding="12,6"
+                                              Content="{Binding Name}"
+                                              IsChecked="{Binding IsChosen}" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <TextBlock Text="NAME" Classes="label" VerticalAlignment="Center" />
+                    <TextBox Text="{Binding Text}" MinWidth="260"
+                             Watermark="part of a file name, such as 2024 or IMG_01"
+                             KeyDown="OnSearchKeyDown" />
+                    <Button Content="Search" Classes="primary" Command="{Binding SearchCommand}" />
+                    <TextBlock Classes="muted" VerticalAlignment="Center" TextWrapping="Wrap"
+                               MaxWidth="460" Text="{Binding Status}" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <Border Grid.Row="1" Classes="card" Padding="40"
+                IsVisible="{Binding !Results.Count}"
+                VerticalAlignment="Center" HorizontalAlignment="Center">
+            <StackPanel Spacing="10" HorizontalAlignment="Center">
+                <TextBlock Text="⌕" FontSize="38" HorizontalAlignment="Center"
+                           Foreground="{StaticResource Accent}" />
+                <TextBlock Classes="muted" HorizontalAlignment="Center" MaxWidth="420"
+                           TextWrapping="Wrap" TextAlignment="Center"
+                           Text="{Binding EmptyCaption}" />
+            </StackPanel>
+        </Border>
+
+        <!-- Virtualised, like the library grid: a search may return five hundred photographs and
+             realising a control for each would cost more than finding them did. -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                      IsVisible="{Binding Results.Count}">
+            <ItemsRepeater ItemsSource="{Binding Results}" ElementPrepared="OnResultPrepared">
+                <ItemsRepeater.Layout>
+                    <UniformGridLayout ItemsStretch="None"
+                                       MinItemWidth="196" MinItemHeight="232"
+                                       MinColumnSpacing="12" MinRowSpacing="12" />
+                </ItemsRepeater.Layout>
+                <ItemsRepeater.ItemTemplate>
+                    <DataTemplate x:DataType="vm:SearchResultViewModel">
+                        <Border Width="196" Classes="tile" Padding="10"
+                                ToolTip.Tip="{Binding FullPath}">
+                            <StackPanel Spacing="8">
+                                <Border Height="140" CornerRadius="8" ClipToBounds="True"
+                                        Background="{StaticResource SurfaceDeep}">
+                                    <Image Source="{Binding Thumbnail}" Stretch="UniformToFill" />
+                                </Border>
+                                <TextBlock Text="{Binding FileName}" FontSize="11"
+                                           FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Text="{Binding People}" FontSize="10"
+                                           Foreground="{StaticResource Accent}"
+                                           TextTrimming="CharacterEllipsis" />
+                                <TextBlock Text="{Binding Taken}" Classes="muted" FontSize="10" />
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsRepeater.ItemTemplate>
+            </ItemsRepeater>
+        </ScrollViewer>
+
+        <Border Grid.Row="2" Classes="card" Padding="16,12" Margin="0,16,0,0">
+            <StackPanel Spacing="8">
+                <ProgressBar IsVisible="{Binding IsBusy}" IsIndeterminate="True" />
+                <TextBlock Classes="muted" TextWrapping="Wrap"
+                           Text="Searching reads the library and changes nothing. Photographs stay exactly where they are." />
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

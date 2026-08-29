@@ -44,6 +44,7 @@ public static class CompositionRoot
         services.AddSingleton<IFaceLinkRepository, SqliteFaceLinkRepository>();
         services.AddSingleton<IIgnoredFaceRepository, SqliteIgnoredFaceRepository>();
         services.AddSingleton<IPhotoSignatureRepository, SqlitePhotoSignatureRepository>();
+        services.AddSingleton<IExportRepository, SqliteExportRepository>();
         services.AddSingleton<IStoreMaintenance, SqliteStoreMaintenance>();
         services.AddSingleton<IUnitOfWork, SqliteUnitOfWork>();
 
@@ -79,6 +80,9 @@ public static class CompositionRoot
         services.AddSingleton<ClusterFacesUseCase>();
         services.AddSingleton<NamePersonUseCase>();
         services.AddSingleton<AutoNameGroupsUseCase>();
+        services.AddSingleton<SearchPhotosUseCase>();
+        services.AddSingleton<ExportPhotosUseCase>();
+        services.AddSingleton<UndoExportUseCase>();
         services.AddSingleton<IndexPhotoSignaturesUseCase>();
         services.AddSingleton<FindDuplicatePhotosUseCase>();
         services.AddSingleton<QuarantineDuplicatesUseCase>();
@@ -98,6 +102,8 @@ public static class CompositionRoot
         services.AddSingleton<LibraryViewModel>();
         services.AddSingleton<PersonDetailViewModel>();
         services.AddSingleton<PeopleViewModel>();
+        services.AddSingleton<SearchViewModel>();
+        services.AddSingleton<OrganiseViewModel>();
         services.AddSingleton<SettingsViewModel>();
         services.AddSingleton<MainWindowViewModel>();
 

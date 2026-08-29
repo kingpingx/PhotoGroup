@@ -27,6 +27,19 @@ public interface IFileSystem
 
     Task CopyAsync(string source, string destination, CancellationToken ct);
 
+    /// <summary>
+    /// Turns a person's name into something that can be a folder.
+    /// </summary>
+    /// <remarks>
+    /// Here rather than on the name itself, deliberately. What may appear in a folder name is a
+    /// property of the filesystem, not of a person: NTFS forbids a different set of characters from
+    /// ext4, and reserves whole words such as CON and NUL that mean nothing anywhere else. Putting
+    /// those rules on the domain type would move a platform detail into the innermost layer.
+    ///
+    /// Never returns empty, because a name made entirely of forbidden characters is still somebody.
+    /// </remarks>
+    string ToFolderName(string name);
+
     /// <summary>Moves a file, using an atomic rename when both paths are on one volume.</summary>
     Task MoveAsync(string source, string destination, CancellationToken ct);
 

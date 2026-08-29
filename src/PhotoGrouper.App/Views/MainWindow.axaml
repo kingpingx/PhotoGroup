@@ -112,6 +112,14 @@
             <Panel IsVisible="{Binding IsPeopleVisible}">
                 <views:PeopleView DataContext="{Binding People}" />
             </Panel>
+            <Panel IsVisible="{Binding IsSearchVisible}">
+                <views:SearchView DataContext="{Binding Search}" />
+            </Panel>
+
+            <Panel IsVisible="{Binding IsOrganiseVisible}">
+                <views:OrganiseView DataContext="{Binding Organise}" />
+            </Panel>
+
             <Panel IsVisible="{Binding IsSettingsVisible}">
                 <views:SettingsView DataContext="{Binding Settings}" />
             </Panel>

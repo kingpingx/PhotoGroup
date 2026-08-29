@@ -1,0 +1,134 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:PhotoGrouper.App.ViewModels"
+             x:Class="PhotoGrouper.App.Views.OrganiseView"
+             x:DataType="vm:OrganiseViewModel">
+
+    <Grid RowDefinitions="Auto,*,Auto" Margin="28,22">
+
+        <Border Grid.Row="0" Classes="card" Padding="20,16" Margin="0,0,0,18">
+            <StackPanel Spacing="14">
+
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <TextBlock Text="WRITE TO" Classes="label" VerticalAlignment="Center" />
+                    <Button Content="Choose folder…" Click="OnChooseFolderClick" />
+                    <TextBlock Classes="muted" VerticalAlignment="Center" MaxWidth="520"
+                               TextTrimming="CharacterEllipsis"
+                               IsVisible="{Binding HasOutputRoot}"
+                               Text="{Binding OutputRoot}" />
+                    <TextBlock Classes="muted" VerticalAlignment="Center"
+                               IsVisible="{Binding !HasOutputRoot}"
+                               Text="Somewhere outside your photo folders, or the copies come back as new photos." />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <TextBlock Text="WHO" Classes="label" VerticalAlignment="Center" />
+                    <CheckBox Content="everybody named" IsChecked="{Binding Everybody}" />
+                    <TextBlock Classes="muted" VerticalAlignment="Center"
+                               IsVisible="{Binding !Everybody}"
+                               Text="{Binding ChosenCount, StringFormat='{}{0:N0} chosen below'}" />
+                </StackPanel>
+
+                <ScrollViewer MaxHeight="120" VerticalScrollBarVisibility="Auto"
+                              IsVisible="{Binding !Everybody}">
+                    <ItemsControl ItemsSource="{Binding People}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:OrganisePersonViewModel">
+                                <ToggleButton Classes="chip" Margin="0,0,8,8" FontSize="12"
+                                              Padding="12,6" Content="{Binding Name}"
+                                              IsChecked="{Binding IsChosen}" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <!-- Copy is the default and move is the one that needs saying out loud, because it
+                     takes originals out of folders somebody chose for them. It is offered at all
+                     only because every move is journalled and can be put back. -->
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <TextBlock Text="HOW" Classes="label" VerticalAlignment="Center" />
+                    <CheckBox Content="move the originals instead of copying"
+                              IsChecked="{Binding MoveInsteadOfCopy}" />
+                    <TextBlock Classes="muted" VerticalAlignment="Center" TextWrapping="Wrap"
+                               MaxWidth="470"
+                               IsVisible="{Binding !MoveInsteadOfCopy}"
+                               Text="Your photos stay where they are and a copy is written." />
+                    <TextBlock Foreground="{StaticResource Danger}" VerticalAlignment="Center"
+                               TextWrapping="Wrap" MaxWidth="470" FontSize="12"
+                               IsVisible="{Binding MoveInsteadOfCopy}"
+                               Text="Your photos leave their folders. This run is recorded and can be put back below." />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <Button Classes="primary" Content="{Binding ActionCaption}"
+                            Command="{Binding ExportCommand}" />
+                    <Button Classes="danger" Content="Stop" Command="{Binding CancelCommand}"
+                            IsVisible="{Binding IsBusy}" />
+                    <TextBlock Classes="muted" VerticalAlignment="Center"
+                               Text="A photo of two people is written into both their folders." />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <Border Grid.Row="1" Classes="card" Padding="40"
+                IsVisible="{Binding !Runs.Count}"
+                VerticalAlignment="Center" HorizontalAlignment="Center">
+            <StackPanel Spacing="10" HorizontalAlignment="Center">
+                <TextBlock Text="⊞" FontSize="36" HorizontalAlignment="Center"
+                           Foreground="{StaticResource Accent}" />
+                <TextBlock Classes="muted" HorizontalAlignment="Center" MaxWidth="420"
+                           TextWrapping="Wrap" TextAlignment="Center"
+                           Text="Nothing written out yet. Choose a folder, then copy your people into it." />
+            </StackPanel>
+        </Border>
+
+        <!-- Past runs, and the offer to reverse a move. This is the whole reason a move is safe to
+             offer, so it is a list on the screen rather than something hidden in settings. -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                      IsVisible="{Binding Runs.Count}">
+            <StackPanel Spacing="10">
+                <TextBlock Text="WHAT HAS BEEN WRITTEN" Classes="label" />
+                <ItemsControl ItemsSource="{Binding Runs}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ExportRunViewModel">
+                            <Border Classes="tile" Padding="14,10" Margin="0,0,0,8">
+                                <Grid ColumnDefinitions="*,Auto,Auto">
+                                    <StackPanel Grid.Column="0" Spacing="3">
+                                        <TextBlock Text="{Binding Caption}" FontWeight="SemiBold"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Classes="muted" FontSize="11"
+                                                   Text="{Binding When}" />
+                                    </StackPanel>
+
+                                    <TextBlock Grid.Column="1" Classes="muted" FontSize="11"
+                                               VerticalAlignment="Center" Margin="0,0,14,0"
+                                               Text="{Binding Outcome}" />
+
+                                    <Button Grid.Column="2" Content="Put back"
+                                            IsVisible="{Binding CanBeUndone}"
+                                            Command="{Binding $parent[ItemsControl].((vm:OrganiseViewModel)DataContext).UndoCommand}"
+                                            CommandParameter="{Binding}"
+                                            ToolTip.Tip="Return every moved photo to the folder it came from" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </ScrollViewer>
+
+        <Border Grid.Row="2" Classes="card" Padding="16,12" Margin="0,16,0,0">
+            <StackPanel Spacing="8">
+                <ProgressBar IsVisible="{Binding IsBusy}"
+                             IsIndeterminate="{Binding IsProgressIndeterminate}"
+                             Value="{Binding ProgressFraction}" Maximum="1" />
+                <TextBlock Text="{Binding Status}" Classes="muted" TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>
