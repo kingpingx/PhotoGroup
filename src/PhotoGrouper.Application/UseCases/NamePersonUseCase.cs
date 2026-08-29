@@ -1,3 +1,4 @@
+using PhotoGrouper.Application.People;
 using PhotoGrouper.Application.Ports;
 using PhotoGrouper.Domain.Faces;
 using PhotoGrouper.Domain.Identity;
@@ -19,6 +20,7 @@ public sealed class NamePersonUseCase(
     IClusterRepository clusters,
     IFaceRepository faces,
     IEmbeddingRepository embeddings,
+    PersonCalibrator calibrator,
     IClock clock)
 {
     /// <summary>
@@ -87,7 +89,7 @@ public sealed class NamePersonUseCase(
             [.. assignable.Select(face => new FaceAssignment(face.Id, person.Id, Assignment.Auto))],
             ct).ConfigureAwait(false);
 
-        await UpdateCentroidAsync(person, record.DetectorId, record.EmbedderId, ct).ConfigureAwait(false);
+        await calibrator.CalibrateAsync(person, record.DetectorId, record.EmbedderId, ct).ConfigureAwait(false);
 
         // Naming somebody is a statement about who they are, not only about this one group, so the
         // remaining groups are checked against them straight away. A person photographed in very
@@ -211,7 +213,7 @@ public sealed class NamePersonUseCase(
         {
             // The person now covers more faces than the centroid was computed from, so it is
             // recomputed rather than left describing only the first group.
-            await UpdateCentroidAsync(person, detectorId, embedderId, ct).ConfigureAwait(false);
+            await calibrator.CalibrateAsync(person, detectorId, embedderId, ct).ConfigureAwait(false);
         }
 
         return (groups, absorbedFaces);
@@ -276,59 +278,6 @@ public sealed class NamePersonUseCase(
         }
 
         return sum;
-    }
-
-    /// <summary>
-    /// Recomputes the average of a person's face vectors.
-    /// </summary>
-    /// <remarks>
-    /// A cache used to place newly scanned faces without re-clustering the library: a new face is
-    /// compared against a few hundred of these rather than against every face that exists. It is
-    /// derived, so a failure to update it costs accuracy on the next scan and nothing more.
-    /// </remarks>
-    private async Task UpdateCentroidAsync(
-        Person person, string detectorId, string embedderId, CancellationToken ct)
-    {
-        var assigned = await faces.GetByPersonAsync(person.Id, detectorId, ct).ConfigureAwait(false);
-
-        float[]? sum = null;
-        var counted = 0;
-
-        foreach (var face in assigned)
-        {
-            var vector = await embeddings.GetAsync(face.Id, embedderId, ct).ConfigureAwait(false);
-            if (vector is null)
-            {
-                continue;
-            }
-
-            sum ??= new float[vector.Length];
-            for (var i = 0; i < vector.Length; i++)
-            {
-                sum[i] += vector[i];
-            }
-
-            counted++;
-        }
-
-        if (sum is null || counted == 0)
-        {
-            return;
-        }
-
-        // Scaled back to unit length so the centroid can be compared with individual faces using
-        // the same dot product everything else uses.
-        var length = MathF.Sqrt(sum.Sum(v => v * v));
-        if (length > 0)
-        {
-            for (var i = 0; i < sum.Length; i++)
-            {
-                sum[i] /= length;
-            }
-        }
-
-        person.UpdateCentroid(sum);
-        await people.UpdateAsync(person, ct).ConfigureAwait(false);
     }
 
 }

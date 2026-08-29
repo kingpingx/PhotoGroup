@@ -1,4 +1,5 @@
 using FluentAssertions;
+using PhotoGrouper.Application.People;
 using PhotoGrouper.Application.Ports;
 using PhotoGrouper.Application.UseCases;
 using PhotoGrouper.Domain.Common;
@@ -42,7 +43,7 @@ public sealed class AutoNameGroupsTests : IDisposable
         _clusters = new SqliteClusterRepository(_database.Connections);
         _embeddings = new SqliteEmbeddingRepository(_database.Connections);
 
-        var naming = new NamePersonUseCase(_people, _clusters, _faces, _embeddings, new SystemClock());
+        var naming = new NamePersonUseCase(_people, _clusters, _faces, _embeddings, Calibrator(), new SystemClock());
         _subject = new AutoNameGroupsUseCase(_people, _clusters, naming);
     }
 
@@ -188,7 +189,7 @@ public sealed class AutoNameGroupsTests : IDisposable
         await AddGroupAsync(Vector(40), Vector(40, 0.04f));
         await CommitAsync();
 
-        var naming = new NamePersonUseCase(_people, _clusters, _faces, _embeddings, new SystemClock());
+        var naming = new NamePersonUseCase(_people, _clusters, _faces, _embeddings, Calibrator(), new SystemClock());
         await naming.ExecuteAsync(alice, "Alice", default);
 
         var result = await _subject.ExecuteAsync("Person", Detector, Embedder, default);
@@ -257,6 +258,9 @@ public sealed class AutoNameGroupsTests : IDisposable
         result.Named.Should().Be(0);
         (await NamesAsync()).Should().BeEmpty();
     }
+
+    /// <summary>The shared calibrator, over this test's own repositories.</summary>
+    private PersonCalibrator Calibrator() => new(_people, _faces, _embeddings);
 
     public void Dispose() => _database.Dispose();
 }

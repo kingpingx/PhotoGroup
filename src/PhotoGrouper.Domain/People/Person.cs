@@ -48,7 +48,15 @@ public sealed class Person
 
     public void Rename(PersonName name) => Name = name;
 
-    public void SetCoverFace(FaceId faceId) => CoverFaceId = faceId;
+    /// <summary>
+    /// Sets, or with null clears, the face shown on this person's tile.
+    /// </summary>
+    /// <remarks>
+    /// Nullable because a person can be emptied of faces, and a cover pointing at a face they no
+    /// longer hold is worse than none: the column carries no foreign key, so nothing downstream
+    /// would ever notice.
+    /// </remarks>
+    public void SetCoverFace(FaceId? faceId) => CoverFaceId = faceId;
 
     public void UpdateCentroid(float[]? centroid) => Centroid = centroid;
 }

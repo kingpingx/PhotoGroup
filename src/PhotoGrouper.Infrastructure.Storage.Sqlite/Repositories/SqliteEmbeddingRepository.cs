@@ -70,6 +70,57 @@ public sealed class SqliteEmbeddingRepository(SqliteConnectionFactory connection
     /// detector are retained so that switching back is instant, but embedding them would mean
     /// paying tens of milliseconds each for vectors nothing is going to read.
     /// </remarks>
+    /// <remarks>
+    /// Parameters are generated for the id list rather than the values being concatenated into the
+    /// statement, and chunked because SQLite caps how many a single statement may carry — the same
+    /// shape, and the same reasoning, as fetching faces by id.
+    ///
+    /// One connection for the whole call, not one per chunk. The point of this method is that
+    /// recomputing a person stops being a few hundred round trips.
+    /// </remarks>
+    public async Task<IReadOnlyList<FaceEmbedding>> GetManyAsync(
+        IReadOnlyList<FaceId> faceIds, string embedderId, CancellationToken ct)
+    {
+        if (faceIds.Count == 0)
+        {
+            return [];
+        }
+
+        const int chunkSize = 400;
+        var results = new List<FaceEmbedding>(faceIds.Count);
+
+        await using var connection = connections.Open();
+
+        for (var offset = 0; offset < faceIds.Count; offset += chunkSize)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var chunk = faceIds.Skip(offset).Take(chunkSize).ToList();
+            var placeholders = string.Join(",", chunk.Select((_, i) => $"$id{i}"));
+
+            await using var command = connection.CreateCommand();
+            command.CommandText =
+                $"SELECT face_id, vector FROM face_embeddings " +
+                $"WHERE embedder_id = $embedder AND face_id IN ({placeholders});";
+
+            command.Parameters.AddWithValue("$embedder", embedderId);
+            for (var i = 0; i < chunk.Count; i++)
+            {
+                command.Parameters.AddWithValue($"$id{i}", SqliteMappings.ToDb(chunk[i].Value));
+            }
+
+            await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            while (await reader.ReadAsync(ct).ConfigureAwait(false))
+            {
+                results.Add(new FaceEmbedding(
+                    new FaceId(reader.GetIdGuid(0)),
+                    VectorCodec.FromBytes((byte[])reader["vector"])));
+            }
+        }
+
+        return results;
+    }
+
     public async Task<IReadOnlyList<FaceId>> GetFacesMissingEmbeddingAsync(
         string embedderId, string detectorId, int limit, CancellationToken ct)
     {

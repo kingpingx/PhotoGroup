@@ -1,3 +1,4 @@
+using PhotoGrouper.Application.People;
 using PhotoGrouper.Application.Ports;
 using PhotoGrouper.Domain.Faces;
 using PhotoGrouper.Domain.Identity;
@@ -22,7 +23,7 @@ public sealed class MergePeopleUseCase(
     IPersonRepository people,
     IFaceRepository faces,
     IClusterRepository clusters,
-    IEmbeddingRepository embeddings)
+    PersonCalibrator calibrator)
 {
     /// <summary>Moves everything from the other people onto <paramref name="keepId"/>.</summary>
     public async Task<MergeResult> ExecuteAsync(
@@ -93,60 +94,11 @@ public sealed class MergePeopleUseCase(
         // Recomputed last, once, over everything the surviving person now holds. Updating it per
         // source would leave the average describing a subset at every step but the final one, and
         // it is what the next grouping run compares new faces against.
-        await UpdateCentroidAsync(keepId, detectorId, embedderId, ct).ConfigureAwait(false);
+        await calibrator.CalibrateAsync(keepId, detectorId, embedderId, ct).ConfigureAwait(false);
 
         return MergeResult.Succeeded(keep.Name.Value, mergedPeople, movedFaces);
     }
 
-    /// <summary>Recomputes the surviving person's average face vector.</summary>
-    private async Task UpdateCentroidAsync(
-        PersonId personId, string detectorId, string embedderId, CancellationToken ct)
-    {
-        var person = await people.GetByIdAsync(personId, ct).ConfigureAwait(false);
-        if (person is null)
-        {
-            return;
-        }
-
-        var assigned = await faces.GetByPersonAsync(personId, detectorId, ct).ConfigureAwait(false);
-
-        float[]? sum = null;
-        var counted = 0;
-
-        foreach (var face in assigned)
-        {
-            var vector = await embeddings.GetAsync(face.Id, embedderId, ct).ConfigureAwait(false);
-            if (vector is null)
-            {
-                continue;
-            }
-
-            sum ??= new float[vector.Length];
-            for (var i = 0; i < vector.Length; i++)
-            {
-                sum[i] += vector[i];
-            }
-
-            counted++;
-        }
-
-        if (sum is null || counted == 0)
-        {
-            return;
-        }
-
-        var length = MathF.Sqrt(sum.Sum(v => v * v));
-        if (length > 0)
-        {
-            for (var i = 0; i < sum.Length; i++)
-            {
-                sum[i] /= length;
-            }
-        }
-
-        person.UpdateCentroid(sum);
-        await people.UpdateAsync(person, ct).ConfigureAwait(false);
-    }
 }
 
 /// <param name="MergedPeople">How many names were folded away.</param>

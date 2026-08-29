@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using PhotoGrouper.App.Services;
+using PhotoGrouper.Application.Ports;
 using PhotoGrouper.Application.UseCases;
 using PhotoGrouper.Infrastructure.Vision;
 
@@ -18,6 +19,7 @@ namespace PhotoGrouper.App.ViewModels;
 /// </remarks>
 public sealed partial class SettingsViewModel(
     ResetLibraryUseCase resetLibrary,
+    RepairDerivedDataUseCase repairDerivedData,
     ModelStore models,
     LibraryChangedNotifier libraryChanged) : ObservableObject
 {
@@ -26,6 +28,14 @@ public sealed partial class SettingsViewModel(
 
     [ObservableProperty]
     private string _modelSummary = "Loading...";
+
+    /// <summary>What the last repair found, or nothing before one has been run.</summary>
+    [ObservableProperty]
+    private string _repairStatus = string.Empty;
+
+    public bool HasRepairStatus => !string.IsNullOrEmpty(RepairStatus);
+
+    partial void OnRepairStatusChanged(string value) => OnPropertyChanged(nameof(HasRepairStatus));
 
     [ObservableProperty]
     private string _status = string.Empty;
@@ -107,6 +117,63 @@ public sealed partial class SettingsViewModel(
         return present.Count == 0
             ? "No models downloaded yet. They are fetched the first time they are needed."
             : $"{string.Join(", ", present)}. {Format(bytes)} on disk.";
+    }
+
+    /// <summary>
+    /// Rebuilds the values nobody typed, where they have drifted from the faces.
+    /// </summary>
+    /// <remarks>
+    /// Here rather than on the People screen because it is maintenance on data the user never sees
+    /// directly, and Settings is already where operations on the store as a whole live. No
+    /// confirmation, unlike everything else on this screen: it recomputes from the faces rather
+    /// than adjusting what is there, so pressing it twice is indistinguishable from pressing it
+    /// once and nothing it does can be regretted.
+    /// </remarks>
+    [RelayCommand(CanExecute = nameof(IsNotBusy))]
+    private async Task RepairAsync()
+    {
+        IsBusy = true;
+        RepairStatus = "Checking every person and group...";
+
+        try
+        {
+            var result = await Task.Run(
+                () => repairDerivedData.ExecuteAsync(
+                    DetectorRegistry.DefaultDetectorId,
+                    ArcFaceEmbedder.Provider.Id,
+                    new DelegateProgressSink(update => RepairStatus = Describe(update)),
+                    CancellationToken.None))
+                .ConfigureAwait(true);
+
+            RepairStatus = result.FoundNothingWrong
+                ? $"Checked {result.PeopleCalibrated:N0} person/people. Nothing needed correcting."
+                : $"Checked {result.PeopleCalibrated:N0} person/people. Corrected "
+                  + $"{result.AveragesCleared:N0} stale average(s), {result.CoversRepaired:N0} "
+                  + $"cover picture(s) and {result.GroupsResized:N0} group size(s)"
+                  + (result.EmptyGroupsRemoved > 0
+                      ? $", and removed {result.EmptyGroupsRemoved:N0} empty group(s)."
+                      : ".");
+
+            if (!result.FoundNothingWrong)
+            {
+                libraryChanged.NotifyChanged();
+            }
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private static string Describe(ProgressUpdate update) =>
+        update.Total is { } total
+            ? $"{update.Stage}: {update.Completed:N0} of {total:N0}"
+            : $"{update.Stage}: {update.Completed:N0}";
+
+    private sealed class DelegateProgressSink(Action<ProgressUpdate> onReport) : IProgressSink
+    {
+        public void Report(ProgressUpdate update) =>
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => onReport(update));
     }
 
     [RelayCommand(CanExecute = nameof(CanBeginReset))]

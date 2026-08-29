@@ -40,6 +40,29 @@
                 </StackPanel>
             </Border>
 
+            <!-- Everything on this screen so far is about removing things. This one only
+                 rebuilds what was derived, so it needs no confirmation and no warning colour. -->
+            <Border Classes="card" Padding="22">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="RECALCULATE" Classes="label" />
+
+                    <TextBlock TextWrapping="Wrap" Classes="muted"
+                               Text="A person carries an average of their faces and a picture for their tile, and a group carries a count of its members. All three are worked out rather than typed, and they fall behind when photographs are removed from a person or moved out of the library. This rebuilds them from the faces as they are now." />
+
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <Button Content="Recalculate people and groups"
+                                Command="{Binding RepairCommand}" />
+                        <TextBlock Classes="muted" VerticalAlignment="Center" TextWrapping="Wrap"
+                                   MaxWidth="520"
+                                   IsVisible="{Binding HasRepairStatus}"
+                                   Text="{Binding RepairStatus}" />
+                        <TextBlock Classes="muted" VerticalAlignment="Center"
+                                   IsVisible="{Binding !HasRepairStatus}"
+                                   Text="Safe to run at any time, and safe to run twice." />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
             <!-- Models -->
             <Border Classes="card" Padding="22">
                 <StackPanel Spacing="10">

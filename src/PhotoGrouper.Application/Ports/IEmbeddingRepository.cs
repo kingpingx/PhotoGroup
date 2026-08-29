@@ -25,6 +25,22 @@ public interface IEmbeddingRepository
 
     Task<float[]?> GetAsync(FaceId faceId, string embedderId, CancellationToken ct);
 
+    /// <summary>
+    /// The vectors for a known set of faces.
+    /// </summary>
+    /// <remarks>
+    /// Present for the same reason <see cref="IFaceRepository.GetByIdsAsync"/> is. Recomputing what
+    /// a person's average face looks like needs every vector they hold, and the two ways to get
+    /// them without this are both wrong: one query per face, which an adapter is free to answer by
+    /// opening a connection each time, or streaming every vector in the library to answer a
+    /// question about forty of them.
+    ///
+    /// Faces with no vector are simply absent from the result rather than being reported as an
+    /// error. A face that has not been embedded yet is an ordinary state, not a fault.
+    /// </remarks>
+    Task<IReadOnlyList<FaceEmbedding>> GetManyAsync(
+        IReadOnlyList<FaceId> faceIds, string embedderId, CancellationToken ct);
+
     /// <summary>Face ids that have no vector yet for this embedder.</summary>
     Task<IReadOnlyList<FaceId>> GetFacesMissingEmbeddingAsync(
         string embedderId, string detectorId, int limit, CancellationToken ct);

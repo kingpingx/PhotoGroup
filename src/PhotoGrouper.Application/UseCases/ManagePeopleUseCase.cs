@@ -1,3 +1,4 @@
+using PhotoGrouper.Application.People;
 using PhotoGrouper.Application.Ports;
 using PhotoGrouper.Domain.Faces;
 using PhotoGrouper.Domain.Identity;
@@ -24,7 +25,7 @@ public sealed class ManagePeopleUseCase(
     IPersonRepository people,
     IFaceRepository faces,
     IClusterRepository clusters,
-    IEmbeddingRepository embeddings,
+    PersonCalibrator calibrator,
     IPhotoReader photos)
 {
     /// <summary>Every photograph a person appears in, for review.</summary>
@@ -99,64 +100,11 @@ public sealed class ManagePeopleUseCase(
             [.. faceIds.Select(id => new FaceAssignment(id, toPersonId, Assignment.Confirmed))],
             ct).ConfigureAwait(false);
 
-        await UpdateCentroidAsync(source, detectorId, embedderId, ct).ConfigureAwait(false);
-        await UpdateCentroidAsync(target, detectorId, embedderId, ct).ConfigureAwait(false);
+        await calibrator.CalibrateAsync(source, detectorId, embedderId, ct).ConfigureAwait(false);
+        await calibrator.CalibrateAsync(target, detectorId, embedderId, ct).ConfigureAwait(false);
 
         return PersonActionResult.Succeeded(
             $"Moved {faceIds.Count:N0} photo(s) from {source.Name} to {target.Name}.");
-    }
-
-    /// <summary>
-    /// Recomputes the average of a person's face vectors.
-    /// </summary>
-    /// <remarks>
-    /// The average is what a later grouping run compares new groups against, so it has to follow
-    /// any change in who owns which face. A person left with nothing keeps no average at all,
-    /// rather than one describing photographs they no longer have.
-    /// </remarks>
-    private async Task UpdateCentroidAsync(
-        Person person, string detectorId, string embedderId, CancellationToken ct)
-    {
-        var assigned = await faces.GetByPersonAsync(person.Id, detectorId, ct).ConfigureAwait(false);
-
-        float[]? sum = null;
-        var counted = 0;
-
-        foreach (var face in assigned)
-        {
-            var vector = await embeddings.GetAsync(face.Id, embedderId, ct).ConfigureAwait(false);
-            if (vector is null)
-            {
-                continue;
-            }
-
-            sum ??= new float[vector.Length];
-            for (var i = 0; i < vector.Length; i++)
-            {
-                sum[i] += vector[i];
-            }
-
-            counted++;
-        }
-
-        if (sum is null || counted == 0)
-        {
-            person.UpdateCentroid(null);
-            await people.UpdateAsync(person, ct).ConfigureAwait(false);
-            return;
-        }
-
-        var length = MathF.Sqrt(sum.Sum(v => v * v));
-        if (length > 0)
-        {
-            for (var i = 0; i < sum.Length; i++)
-            {
-                sum[i] /= length;
-            }
-        }
-
-        person.UpdateCentroid(sum);
-        await people.UpdateAsync(person, ct).ConfigureAwait(false);
     }
 
     public async Task<PersonActionResult> RenameAsync(PersonId personId, string name, CancellationToken ct)
@@ -258,7 +206,7 @@ public sealed class ManagePeopleUseCase(
             [.. faceIds.Select(id => new FaceAssignment(id, null, Assignment.Rejected))],
             ct).ConfigureAwait(false);
 
-        await UpdateCentroidAsync(person, detectorId, embedderId, ct).ConfigureAwait(false);
+        await calibrator.CalibrateAsync(person, detectorId, embedderId, ct).ConfigureAwait(false);
 
         return PersonActionResult.Succeeded(
             $"Removed {faceIds.Count:N0} photo(s) from {person.Name}. They will not be added back automatically.");

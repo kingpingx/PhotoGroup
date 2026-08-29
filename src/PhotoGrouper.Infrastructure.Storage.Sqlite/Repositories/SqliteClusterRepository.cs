@@ -106,6 +106,37 @@ public sealed class SqliteClusterRepository(SqliteConnectionFactory connections)
         await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
+    public async Task SetSizeAsync(ClusterId id, int size, FaceId medoidFaceId, CancellationToken ct)
+    {
+        await using var connection = connections.Open();
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "UPDATE clusters SET size = $size, medoid_face_id = $medoid WHERE id = $id;";
+        command.Parameters.AddWithValue("$size", size);
+        command.Parameters.AddWithValue("$medoid", SqliteMappings.ToDb(medoidFaceId.Value));
+        command.Parameters.AddWithValue("$id", SqliteMappings.ToDb(id.Value));
+        await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <remarks>
+    /// Emptiness is asked of the faces table rather than of the stored size, which is the very
+    /// value this exists to distrust.
+    /// </remarks>
+    public async Task<int> RemoveEmptyAsync(string detectorId, string embedderId, CancellationToken ct)
+    {
+        await using var connection = connections.Open();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            DELETE FROM clusters
+            WHERE detector_id = $detector AND embedder_id = $embedder
+              AND NOT EXISTS (SELECT 1 FROM faces WHERE faces.cluster_id = clusters.id);
+            """;
+        command.Parameters.AddWithValue("$detector", detectorId);
+        command.Parameters.AddWithValue("$embedder", embedderId);
+
+        return await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
     public async Task ClearPersonAsync(PersonId personId, CancellationToken ct)
     {
         await using var connection = connections.Open();

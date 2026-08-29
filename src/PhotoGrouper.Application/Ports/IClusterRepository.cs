@@ -22,6 +22,30 @@ public interface IClusterRepository
     Task SetPersonAsync(ClusterId id, PersonId? personId, CancellationToken ct);
 
     /// <summary>
+    /// Corrects a group's recorded size and its most central member.
+    /// </summary>
+    /// <remarks>
+    /// Size is stored rather than counted, because the People screen orders by it, decides from it
+    /// whether a group is large enough to be worth naming, and totals it into the header — all on
+    /// every refresh. The cost of that is that it is a snapshot: nothing updates it when a face is
+    /// rejected or a photograph deleted, so a group can go on claiming members it no longer has.
+    ///
+    /// Size and medoid are corrected together rather than through two calls, because they go stale
+    /// together: a group that lost photographs has both a count that overstates it and, if the lost
+    /// photograph held the central face, a cover pointing at nothing.
+    /// </remarks>
+    Task SetSizeAsync(ClusterId id, int size, FaceId medoidFaceId, CancellationToken ct);
+
+    /// <summary>
+    /// Removes groups that no longer hold any face.
+    /// </summary>
+    /// <remarks>
+    /// Removed rather than recorded as empty. A zero-size row is still a row: it comes back on
+    /// every refresh, and naming it would produce a refusal the user has no way to act on.
+    /// </remarks>
+    Task<int> RemoveEmptyAsync(string detectorId, string embedderId, CancellationToken ct);
+
+    /// <summary>
     /// Detaches every cluster from a person, so their groups become unnamed again.
     /// </summary>
     /// <remarks>

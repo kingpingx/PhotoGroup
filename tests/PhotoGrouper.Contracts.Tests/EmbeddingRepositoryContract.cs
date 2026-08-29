@@ -239,4 +239,88 @@ public abstract class EmbeddingRepositoryContract
         (await context.Embeddings.CountAsync(EmbedderA, default)).Should().Be(200);
         (await context.Embeddings.GetAsync(faces[57], EmbedderA, default)).Should().Equal(Vector(512, 57));
     }
+
+    [Fact]
+    public async Task Several_vectors_can_be_fetched_in_one_call()
+    {
+        var context = await CreateAsync();
+        var first = await AddFaceAsync(context, @"D:\photos.jpg");
+        var second = await AddFaceAsync(context, @"D:\photos.jpg");
+
+        await context.Embeddings.BulkUpsertAsync(EmbedderA, "1",
+            [new FaceEmbedding(first, Vector(64, 1)), new FaceEmbedding(second, Vector(64, 2))], default);
+
+        var found = await context.Embeddings.GetManyAsync([first, second], EmbedderA, default);
+
+        found.Should().HaveCount(2);
+        found.Single(e => e.FaceId == first).Vector.Should().Equal(Vector(64, 1));
+        found.Single(e => e.FaceId == second).Vector.Should().Equal(Vector(64, 2));
+    }
+
+    /// <remarks>
+    /// Vectors from two embedders cannot be compared at all, so returning one where the other was
+    /// asked for would not fail, it would quietly produce a meaningless similarity.
+    /// </remarks>
+    [Fact]
+    public async Task Vectors_from_another_embedder_are_not_returned()
+    {
+        var context = await CreateAsync();
+        var face = await AddFaceAsync(context);
+
+        await context.Embeddings.BulkUpsertAsync(
+            EmbedderB, "1", [new FaceEmbedding(face, Vector(64, 3))], default);
+
+        (await context.Embeddings.GetManyAsync([face], EmbedderA, default)).Should().BeEmpty();
+    }
+
+    /// <remarks>
+    /// A face that has not been embedded yet is an ordinary state, not a fault, so it is simply
+    /// absent rather than reported as a missing row.
+    /// </remarks>
+    [Fact]
+    public async Task Ids_that_have_no_vector_are_simply_absent()
+    {
+        var context = await CreateAsync();
+        var embedded = await AddFaceAsync(context, @"D:\photos.jpg");
+        var bare = await AddFaceAsync(context, @"D:\photos.jpg");
+
+        await context.Embeddings.BulkUpsertAsync(
+            EmbedderA, "1", [new FaceEmbedding(embedded, Vector(64, 1))], default);
+
+        var found = await context.Embeddings.GetManyAsync([embedded, bare], EmbedderA, default);
+
+        found.Should().ContainSingle().Which.FaceId.Should().Be(embedded);
+    }
+
+    [Fact]
+    public async Task Asking_for_nothing_returns_nothing()
+    {
+        var context = await CreateAsync();
+
+        (await context.Embeddings.GetManyAsync([], EmbedderA, default)).Should().BeEmpty();
+    }
+
+    /// <remarks>
+    /// The one that catches a statement built with a parameter per id. SQLite caps how many a single
+    /// statement may carry, so an unchunked implementation works perfectly until a library grows
+    /// large enough to exceed it — and then fails on the person with the most photographs.
+    /// </remarks>
+    [Fact]
+    public async Task More_ids_than_one_statement_can_carry_are_handled()
+    {
+        var context = await CreateAsync();
+        var faces = new List<FaceId>();
+        for (var i = 0; i < 1200; i++)
+        {
+            faces.Add(await AddFaceAsync(context, $@"D:\photos\{i:D4}.jpg"));
+        }
+
+        await context.Embeddings.BulkUpsertAsync(
+            EmbedderA, "1", [.. faces.Select((f, i) => new FaceEmbedding(f, Vector(16, i)))], default);
+
+        var found = await context.Embeddings.GetManyAsync(faces, EmbedderA, default);
+
+        found.Should().HaveCount(1200);
+        found.Single(e => e.FaceId == faces[999]).Vector.Should().Equal(Vector(16, 999));
+    }
 }

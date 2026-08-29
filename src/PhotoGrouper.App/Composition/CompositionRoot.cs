@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using PhotoGrouper.App.Services;
 using PhotoGrouper.App.ViewModels;
 using PhotoGrouper.Application.Ports;
+using PhotoGrouper.Application.People;
 using PhotoGrouper.Application.UseCases;
 using PhotoGrouper.Infrastructure.FileSystem;
 using PhotoGrouper.Infrastructure.Storage.Sqlite;
@@ -70,6 +71,8 @@ public static class CompositionRoot
 
         // Use cases.
         services.AddSingleton<ScanLibraryUseCase>();
+        services.AddSingleton<PersonCalibrator>();
+        services.AddSingleton<RepairDerivedDataUseCase>();
         services.AddSingleton<ManageScanRootsUseCase>();
         services.AddSingleton<DetectFacesUseCase>();
         services.AddSingleton<EmbedFacesUseCase>();

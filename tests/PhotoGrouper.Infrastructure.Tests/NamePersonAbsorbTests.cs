@@ -1,4 +1,5 @@
 using FluentAssertions;
+using PhotoGrouper.Application.People;
 using PhotoGrouper.Application.Ports;
 using PhotoGrouper.Application.UseCases;
 using PhotoGrouper.Domain.Common;
@@ -42,7 +43,7 @@ public sealed class NamePersonAbsorbTests : IDisposable
         _people = new SqlitePersonRepository(_database.Connections);
         _clusters = new SqliteClusterRepository(_database.Connections);
         _embeddings = new SqliteEmbeddingRepository(_database.Connections);
-        _subject = new NamePersonUseCase(_people, _clusters, _faces, _embeddings, new SystemClock());
+        _subject = new NamePersonUseCase(_people, _clusters, _faces, _embeddings, Calibrator(), new SystemClock());
     }
 
     private static readonly FaceLandmarks Landmarks = new(
@@ -223,6 +224,9 @@ public sealed class NamePersonAbsorbTests : IDisposable
         (await PhotoCountAsync("Alice")).Should().Be(2);
         (await PhotoCountAsync("Bob")).Should().Be(2);
     }
+
+    /// <summary>The shared calibrator, over this test's own repositories.</summary>
+    private PersonCalibrator Calibrator() => new(_people, _faces, _embeddings);
 
     public void Dispose() => _database.Dispose();
 }

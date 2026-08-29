@@ -33,14 +33,24 @@ public sealed class FindDuplicateFacesUseCase(
     /// </summary>
     /// <remarks>
     /// Every face compared here already belongs to one person, so "is this the same person" is not
-    /// the question and the ordinary same-person bar would match everything. Measured on this
-    /// project's reference photographs, the same person in different photographs scores between
-    /// 0.62 and 0.81. Two crops of one face a third of a second apart differ only by sensor noise,
-    /// a sub-pixel shift and a millimetre of expression, and score far above that band.
+    /// the question and the ordinary same-person bar would match everything.
     ///
-    /// This sits in the gap, deliberately at the cautious end, because the two mistakes are not
-    /// equal: missing one leaves a person with an extra photograph, and inventing one offers to
-    /// strip them down to a single picture, which is the opposite of what a person is for.
+    /// Measured over a real library of twenty-two embedded faces, the pairs fall into two clusters
+    /// with nothing in between. Copies of one picture — byte-identical files, and the same image
+    /// re-saved in another format — score 0.88 to 1.00. The same person in a genuinely different
+    /// photograph scores 0.43 and 0.66. Two different people never exceed 0.24, which is not the
+    /// question here but is worth knowing: there is no risk of this reaching across identities.
+    ///
+    /// So the line belongs somewhere in the empty stretch between 0.66 and 0.88, and this sits
+    /// deliberately above it rather than in the middle. The two mistakes are not equal: missing one
+    /// leaves a person with an extra photograph, and inventing one offers to strip them down to a
+    /// single picture, which is the opposite of what a person is for.
+    ///
+    /// What that sample did not contain is a true burst — several frames of a moving subject
+    /// seconds apart, rather than copies of one frame. Those should score between the two clusters
+    /// and nearer the top, but that is reasoning and the numbers above are measurement, so the
+    /// distinction is stated rather than blurred. If bursts turn out to be missed, the evidence for
+    /// lowering this is a library that contains some.
     ///
     /// Passed in rather than read directly, so the screen can offer a stricter or looser setting
     /// without this constant pretending to be the only answer.

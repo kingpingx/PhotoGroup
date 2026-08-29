@@ -1,4 +1,5 @@
 using FluentAssertions;
+using PhotoGrouper.Application.People;
 using PhotoGrouper.Application.Ports;
 using PhotoGrouper.Application.UseCases;
 using PhotoGrouper.Domain.Common;
@@ -46,7 +47,7 @@ public sealed class MergePeopleTests : IDisposable
         _clusters = new SqliteClusterRepository(_database.Connections);
         _embeddings = new SqliteEmbeddingRepository(_database.Connections);
 
-        _subject = new MergePeopleUseCase(_people, _faces, _clusters, _embeddings);
+        _subject = new MergePeopleUseCase(_people, _faces, _clusters, Calibrator());
     }
 
     private static readonly FaceLandmarks Landmarks = new(
@@ -270,6 +271,9 @@ public sealed class MergePeopleTests : IDisposable
         (await _people.GetByIdAsync(duplicate.Id, default))
             .Should().NotBeNull("nothing is destroyed when the target is gone");
     }
+
+    /// <summary>The shared calibrator, over this test's own repositories.</summary>
+    private PersonCalibrator Calibrator() => new(_people, _faces, _embeddings);
 
     public void Dispose() => _database.Dispose();
 }
